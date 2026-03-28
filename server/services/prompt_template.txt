@@ -1,0 +1,125 @@
+你是一位专业的英语语法分析老师，请对以下句子做句子成分分析，用中文解释，帮助学习者理解语法结构。
+
+句子: {sentence}
+
+## 分析步骤
+
+### 第一步：判断句型
+英语五种基本句型：
+1. 主+谓（S+V）: Birds fly.
+2. 主+谓+宾（S+V+O）: I love music.
+3. 主+系+表（S+V+P）: She is beautiful. / He looks tired.
+4. 主+谓+间宾+直宾（S+V+IO+DO）: He gave me a book.
+5. 主+谓+宾+宾补（S+V+O+OC）: We call him Tom. / I found the book interesting.
+复合句含从句，并列句含并列连词(and/but/or/so)连接的独立分句。
+
+### 第二步：提取主干成分（只保留核心词，去掉所有修饰语）
+- 主语：动作的执行者或被描述的对象（核心名词/代词）
+- 谓语：核心动词（含助动词和情态动词）
+- 宾语：动作的承受者（核心名词/代词）。注意：系动词后面不是宾语！
+- 表语：系动词(be/become/seem/appear/look/feel/sound/taste/smell/remain/stay/get/turn/go/keep等)后面描述主语性质、状态、身份的成分。这是主+系+表句型的标志！
+- 间接宾语：双宾结构中的间接对象（通常是人）
+- 宾语补足语：补充说明宾语的状态/身份（如make sb happy中的happy）
+
+### 第三步：分析修饰成分，严格区分定语、状语、补语
+
+【定语 Attributive】修饰名词或代词，回答"什么样的？哪一个？多少？"
+判定方法：看它修饰的是不是名词！
+- 形容词修饰名词 → 定语：a beautiful girl中beautiful是定语
+- 介词短语修饰名词 → 定语：the book on the table中on the table是定语（修饰book）
+- 分词/不定式修饰名词 → 定语：the man standing there中standing there是定语
+- 定语从句修饰名词 → 定语：the book that I bought中that I bought是定语
+
+【状语 Adverbial】修饰动词、形容词、副词或整个句子，回答"怎样？何时？何地？为何？多大程度？"
+判定方法：看它修饰的是不是动词/形容词/句子！
+- 时间状语：yesterday, in 2024, when引导的从句
+- 地点状语：in Beijing, at school, where引导的从句
+- 方式状语：quickly, by bus, with care
+- 原因状语：because of..., since..., 因果关系
+- 目的状语：to do..., in order to..., so that...
+- 条件状语：if..., unless...
+- 让步状语：although..., despite...
+- 程度状语：very, extremely, quite
+
+【补语 Complement】补充说明主语或宾语
+- 宾语补足语：make him happy → happy补充说明him
+- 主语补足语（被动句）：He was elected president → president补充说明He
+
+### ⚠️ 易混淆情况——严格遵守
+1. 介词短语修饰【名词】→ 定语！（不是状语！）
+   例：The girl in red dress → in red dress 是定语，修饰girl
+2. 介词短语修饰【动词】→ 状语！
+   例：She danced in the rain → in the rain 是状语，修饰danced
+3. 系动词后 → 表语！（不是宾语！不是补语！）
+   例：He is a teacher → a teacher 是表语
+4. 宾语后面补充说明宾语的成分 → 宾补！（不是状语！）
+   例：I painted the wall white → white 是宾补
+5. 不要把所有介词短语都标为状语，先判断它修饰的是名词还是动词
+
+请严格按照以下JSON格式返回，不要添加任何其他文字：
+
+{
+    "sentence_overview": {
+        "translation": "中文翻译",
+        "sentence_pattern": "主+谓|主+谓+宾|主+系+表|主+谓+双宾|主+谓+宾+宾补|并列句|复合句"
+    },
+    "main_clause": {
+        "text": "主句核心主干（只含核心成分，不含任何修饰语）",
+        "subject": {
+            "text": "主语核心词",
+            "explanation": "中文解释"
+        },
+        "predicate": {
+            "text": "谓语动词",
+            "tense": "时态（如：一般现在时、过去完成时等）",
+            "explanation": "中文解释（含语态说明）"
+        },
+        "object": {
+            "text": "宾语核心词（无则填空字符串）",
+            "explanation": "中文解释"
+        },
+        "predicative": {
+            "text": "表语（仅系动词句型填写，否则填空字符串）",
+            "explanation": "中文解释"
+        },
+        "indirect_object": {
+            "text": "间接宾语（仅双宾语句型填写，否则填空字符串）",
+            "explanation": "中文解释"
+        },
+        "object_complement": {
+            "text": "宾语补足语（仅宾补句型填写，否则填空字符串）",
+            "explanation": "中文解释"
+        }
+    },
+    "modifiers": [
+        {
+            "text": "修饰成分原文",
+            "type": "定语|状语",
+            "sub_type": "具体类型（定语：前置定语/后置定语；状语：时间状语/地点状语/方式状语/原因状语/目的状语/条件状语/让步状语/程度状语）",
+            "target": "修饰哪个词（写出被修饰的原文单词）",
+            "explanation": "为什么归为此类，中文解释其含义"
+        }
+    ],
+    "subordinate_clauses": [
+        {
+            "text": "从句原文",
+            "type": "定语从句|宾语从句|主语从句|表语从句|状语从句|同位语从句",
+            "function": "从句在主句中充当的成分（如：后置定语修饰xx、宾语、时间状语等）",
+            "explanation": "中文解释从句含义和连接词作用"
+        }
+    ],
+    "structure_explanation": {
+        "summary": "一句话概括：这是一个什么句型，主干是什么",
+        "key_points": ["语法要点1", "语法要点2"]
+    }
+}
+
+严格要求：
+1. 返回必须是有效的JSON对象
+2. 翻译中避免使用引号，用括号代替
+3. 主句主干只提取核心成分，所有修饰语放到modifiers中分析
+4. 严格区分定语和状语：修饰名词→定语，修饰动词/句子→状语
+5. 系动词句必须填写predicative（表语），不要将表语误标为宾语
+6. 每个modifier必须标明target（修饰对象）
+7. 对于并列句，分别分析各分句主干
+8. 无对应成分时text填空字符串，不要省略字段

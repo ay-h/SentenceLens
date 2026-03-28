@@ -1,0 +1,27 @@
+# Node modules
+node_modules/
+
+# Build outputs
+dist/
+frontend/dist/
+renderer/
+
+# Installer packages
+release/
+build/
+
+# Data directory (runtime only)
+data/
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment variables
+.env
+.env.local
