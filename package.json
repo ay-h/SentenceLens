@@ -21,13 +21,16 @@
       "output": "release",
       "buildResources": "resources"
     },
+    "asar": false,
     "files": [
       "main.js",
       "preload.js",
       "server/**/*",
       "renderer/**/*",
       "resources/**/*",
-      "data/**/*"
+      "data/**/*",
+      "node_modules/sql.js/dist/**/*",
+      "node_modules/tesseract.js/dist/**/*"
     ],
     "win": {
       "target": [
