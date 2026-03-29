@@ -3,7 +3,7 @@
  * Manages Express.js backend server
  */
 
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const fsPromises = require("fs").promises;
@@ -12,32 +12,147 @@ const { spawn } = require("child_process");
 // Keep global reference for window instance
 let mainWindow = null;
 let server = null;
+let serverLogStream = null;
 
-// App data directory
-const APP_DATA_DIR = path.join(
+const CONFIG_PATH = path.join(app.getPath("userData"), "settings.json");
+const DEFAULT_DATA_DIR = path.join(
   app.getPath("userData"),
   "english-reading-helper",
 );
 const SERVER_PORT = 8000;
 
+function normalizePath(dirPath) {
+  return path.resolve(dirPath);
+}
+
+function loadConfig() {
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
+      }
+    }
+  } catch (error) {
+    console.error("Failed to load app config:", error);
+  }
+  return {};
+}
+
+async function saveConfig(config) {
+  try {
+    await fsPromises.mkdir(path.dirname(CONFIG_PATH), { recursive: true });
+    await fsPromises.writeFile(
+      CONFIG_PATH,
+      JSON.stringify(config, null, 2),
+      "utf-8",
+    );
+  } catch (error) {
+    console.error("Failed to save app config:", error);
+    throw error;
+  }
+}
+
+let appConfig = loadConfig();
+let currentDataDir = normalizePath(appConfig.dataDir || DEFAULT_DATA_DIR);
+
+function getDataDir() {
+  return currentDataDir;
+}
+
+async function setDataDir(dir) {
+  currentDataDir = normalizePath(dir);
+  appConfig = { ...appConfig, dataDir: currentDataDir };
+  await saveConfig(appConfig);
+}
+
+function isSubPath(target, base) {
+  const relative = path.relative(base, target);
+  return relative && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+async function pathExists(p) {
+  try {
+    await fsPromises.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function directoryIsEmpty(dir) {
+  try {
+    const entries = await fsPromises.readdir(dir);
+    return entries.length === 0;
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return true;
+    }
+    throw error;
+  }
+}
+
+async function inspectDataDir(dir) {
+  const result = {
+    exists: false,
+    hasDatabase: false,
+    databaseSize: 0,
+    uploadsExists: false,
+    uploadsCount: 0,
+  };
+
+  if (!(await pathExists(dir))) {
+    return result;
+  }
+
+  result.exists = true;
+
+  const databasePath = path.join(dir, "database.db");
+  if (await pathExists(databasePath)) {
+    const stats = await fsPromises.stat(databasePath);
+    result.hasDatabase = true;
+    result.databaseSize = stats.size;
+  }
+
+  const uploadsPath = path.join(dir, "uploads");
+  if (await pathExists(uploadsPath)) {
+    const entries = await fsPromises.readdir(uploadsPath);
+    result.uploadsExists = true;
+    result.uploadsCount = entries.length;
+  }
+
+  return result;
+}
+
+function verifyMigrationState(oldState, newState) {
+  if (oldState.hasDatabase && (!newState.hasDatabase || newState.databaseSize !== oldState.databaseSize)) {
+    throw new Error("数据库文件复制失败，请重试");
+  }
+
+  if (oldState.uploadsExists && !newState.uploadsExists) {
+    throw new Error("上传目录复制失败，请重试");
+  }
+}
+
 /**
  * Create necessary directories
  */
-async function ensureDirectories() {
+async function ensureDirectories(dir = getDataDir()) {
   const dirs = [
-    APP_DATA_DIR,
-    path.join(APP_DATA_DIR, "uploads"),
-    path.join(APP_DATA_DIR, "data"),
-    path.join(APP_DATA_DIR, "logs"),
+    dir,
+    path.join(dir, "uploads"),
+    path.join(dir, "data"),
+    path.join(dir, "logs"),
   ];
 
-  for (const dir of dirs) {
+  for (const dirPath of dirs) {
     try {
-      await fsPromises.mkdir(dir, { recursive: true });
-      console.log(`Created directory: ${dir}`);
+      await fsPromises.mkdir(dirPath, { recursive: true });
+      console.log(`Created directory: ${dirPath}`);
     } catch (error) {
       if (error.code !== "EEXIST") {
-        console.error(`Failed to create directory: ${dir}`, error);
+        console.error(`Failed to create directory: ${dirPath}`, error);
         throw error;
       }
     }
@@ -56,14 +171,18 @@ async function startServer() {
   try {
     console.log("Starting Express.js server...");
 
-    const logFile = path.join(APP_DATA_DIR, "logs", "server.log");
-    const logStream = fs.createWriteStream(logFile, { flags: "a" });
+    const currentDir = getDataDir();
+    await ensureDirectories(currentDir);
+
+    const logFile = path.join(currentDir, "logs", "server.log");
+    await fsPromises.mkdir(path.dirname(logFile), { recursive: true });
+    serverLogStream = fs.createWriteStream(logFile, { flags: "a" });
 
     server = spawn("node", ["server/app.js"], {
       cwd: __dirname,
       env: {
         ...process.env,
-        APP_DATA_DIR: APP_DATA_DIR,
+        APP_DATA_DIR: currentDir,
       },
     });
 
@@ -71,13 +190,13 @@ async function startServer() {
     server.stdout.on("data", (data) => {
       const message = data.toString().trim();
       console.log(`[Server] ${message}`);
-      logStream.write(`[${new Date().toISOString()}] ${message}\n`);
+      serverLogStream?.write(`[${new Date().toISOString()}] ${message}\n`);
     });
 
     server.stderr.on("data", (data) => {
       const message = data.toString().trim();
       console.error(`[Server Error] ${message}`);
-      logStream.write(`[${new Date().toISOString()}] ERROR: ${message}\n`);
+      serverLogStream?.write(`[${new Date().toISOString()}] ERROR: ${message}\n`);
     });
 
     // Handle process exit
@@ -85,9 +204,13 @@ async function startServer() {
       console.log(
         `Server process exited with code: ${code}, signal: ${signal}`,
       );
-      logStream.write(
+      serverLogStream?.write(
         `[${new Date().toISOString()}] Server exited: code=${code}, signal=${signal}\n`,
       );
+      if (serverLogStream) {
+        serverLogStream.end();
+        serverLogStream = null;
+      }
       server = null;
     });
 
@@ -164,6 +287,121 @@ async function stopServer() {
     console.log("Server stopped");
     server = null;
   }
+  if (serverLogStream) {
+    serverLogStream.end();
+    serverLogStream = null;
+  }
+}
+
+async function migrateDataDirectory(targetDir) {
+  const newDir = normalizePath(targetDir);
+  const oldDir = getDataDir();
+
+  if (newDir === oldDir) {
+    return { success: true, message: "数据目录未改变", newDir };
+  }
+
+  if (isSubPath(newDir, oldDir)) {
+    throw new Error("请选择不在当前数据目录内部的位置");
+  }
+
+  if (await pathExists(newDir) && !(await directoryIsEmpty(newDir))) {
+    throw new Error("目标目录必须为空。如需打开已有数据，请使用“切换至已有数据目录”。");
+  }
+
+  console.log(`Migrating data from ${oldDir} to ${newDir}`);
+
+  await stopServer();
+  const oldState = await inspectDataDir(oldDir);
+
+  let cleanupWarning = null;
+
+  try {
+    await fsPromises.mkdir(newDir, { recursive: true });
+
+    if (await pathExists(oldDir)) {
+      const entries = await fsPromises.readdir(oldDir);
+      for (const entry of entries) {
+        const source = path.join(oldDir, entry);
+        const destination = path.join(newDir, entry);
+        await fsPromises.cp(source, destination, { recursive: true, force: true });
+      }
+    }
+
+    await ensureDirectories(newDir);
+
+    const newState = await inspectDataDir(newDir);
+    verifyMigrationState(oldState, newState);
+
+    await setDataDir(newDir);
+
+    if ((await pathExists(oldDir)) && !isSubPath(oldDir, newDir)) {
+      try {
+        await fsPromises.rm(oldDir, { recursive: true, force: true });
+        console.log(`Removed old data directory: ${oldDir}`);
+      } catch (error) {
+        cleanupWarning = `旧数据目录删除失败: ${error.message}`;
+        console.warn(`Failed to remove old data directory ${oldDir}:`, error);
+      }
+    } else if (await pathExists(oldDir)) {
+      console.warn(
+        "Skipping removal of old data directory due to nested path relationship.",
+      );
+    }
+
+    setTimeout(() => {
+      app.relaunch();
+      app.exit(0);
+    }, 300);
+
+    return { success: true, newDir, cleanupWarning };
+  } catch (error) {
+    await startServer().catch((restartError) => {
+      console.error("Failed to restart server after migration error:", restartError);
+    });
+    throw error;
+  }
+}
+
+async function useExistingDataDirectory(targetDir) {
+  const newDir = normalizePath(targetDir);
+  const oldDir = getDataDir();
+
+  if (newDir === oldDir) {
+    return { success: true, message: "数据目录未改变", newDir };
+  }
+
+  if (!(await pathExists(newDir))) {
+    throw new Error("选择的目录不存在");
+  }
+
+  if (await directoryIsEmpty(newDir)) {
+    throw new Error("目标目录为空。若要迁移，请先使用“选择新的数据目录”。");
+  }
+
+  const targetState = await inspectDataDir(newDir);
+  if (!targetState.hasDatabase) {
+    throw new Error("未检测到数据库文件。请确认该目录为有效的数据目录。");
+  }
+
+  await stopServer();
+
+  try {
+    await setDataDir(newDir);
+    await ensureDirectories(newDir);
+
+    setTimeout(() => {
+      app.relaunch();
+      app.exit(0);
+    }, 300);
+
+    return { success: true, newDir, reused: true };
+  } catch (error) {
+    await startServer().catch((restartError) => {
+      console.error("Failed to restart server after switching data directory:", restartError);
+    });
+    throw error;
+  }
 }
 
 /**
@@ -214,7 +452,7 @@ function createWindow() {
 }
 
 // IPC handlers
-require("electron").ipcMain.handle("get-app-data-dir", () => APP_DATA_DIR);
+require("electron").ipcMain.handle("get-app-data-dir", () => getDataDir());
 require("electron").ipcMain.handle("get-server-status", () => ({
   isRunning: server !== null,
 }));
@@ -234,6 +472,55 @@ require("electron").ipcMain.handle("stop-server", async () => {
   } catch (error) {
     console.error("Failed to stop server:", error);
     return { success: false, error: error.message };
+  }
+});
+require("electron").ipcMain.handle("change-data-dir", async () => {
+  try {
+    const result = await dialog.showOpenDialog({
+      title: "选择新的数据目录",
+      properties: ["openDirectory", "createDirectory"],
+      defaultPath: getDataDir(),
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true };
+    }
+
+    const targetDir = result.filePaths[0];
+    const migrationResult = await migrateDataDirectory(targetDir);
+
+    return { ...migrationResult, canceled: false, restarting: true };
+  } catch (error) {
+    console.error("Failed to change data directory:", error);
+    if (!server) {
+      await startServer();
+    }
+    return { success: false, error: error.message, canceled: false };
+  }
+});
+
+require("electron").ipcMain.handle("use-existing-data-dir", async () => {
+  try {
+    const result = await dialog.showOpenDialog({
+      title: "选择已有的数据目录",
+      properties: ["openDirectory"],
+      defaultPath: getDataDir(),
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true };
+    }
+
+    const targetDir = result.filePaths[0];
+    const switchResult = await useExistingDataDirectory(targetDir);
+
+    return { ...switchResult, canceled: false, restarting: true };
+  } catch (error) {
+    console.error("Failed to use existing data directory:", error);
+    if (!server) {
+      await startServer();
+    }
+    return { success: false, error: error.message, canceled: false };
   }
 });
 

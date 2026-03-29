@@ -17,6 +17,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Stop server
   stopServer: () => ipcRenderer.invoke('stop-server'),
+
+  // Change data directory
+  changeDataDir: () => ipcRenderer.invoke('change-data-dir'),
+
+  // Use existing data directory
+  useExistingDataDir: () => ipcRenderer.invoke('use-existing-data-dir'),
 });
 
 console.log('Preload script loaded');
