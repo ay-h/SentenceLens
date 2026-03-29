@@ -14,6 +14,24 @@ let mainWindow = null;
 let server = null;
 let serverLogStream = null;
 
+function formatLogTimestamp() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  const year = now.getFullYear();
+  const month = pad(now.getMonth() + 1);
+  const day = pad(now.getDate());
+  const hours = pad(now.getHours());
+  const minutes = pad(now.getMinutes());
+  const seconds = pad(now.getSeconds());
+  const offsetMinutes = now.getTimezoneOffset();
+  const sign = offsetMinutes <= 0 ? "+" : "-";
+  const totalMinutes = Math.abs(offsetMinutes);
+  const offsetHours = pad(Math.floor(totalMinutes / 60));
+  const offsetRemaining = pad(totalMinutes % 60);
+
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} ${sign}${offsetHours}:${offsetRemaining}`;
+}
+
 const CONFIG_PATH = path.join(app.getPath("userData"), "settings.json");
 const DEFAULT_DATA_DIR = path.join(
   app.getPath("userData"),
@@ -142,7 +160,6 @@ async function ensureDirectories(dir = getDataDir()) {
   const dirs = [
     dir,
     path.join(dir, "uploads"),
-    path.join(dir, "data"),
     path.join(dir, "logs"),
   ];
 
@@ -190,13 +207,13 @@ async function startServer() {
     server.stdout.on("data", (data) => {
       const message = data.toString().trim();
       console.log(`[Server] ${message}`);
-      serverLogStream?.write(`[${new Date().toISOString()}] ${message}\n`);
+      serverLogStream?.write(`[${formatLogTimestamp()}] ${message}\n`);
     });
 
     server.stderr.on("data", (data) => {
       const message = data.toString().trim();
       console.error(`[Server Error] ${message}`);
-      serverLogStream?.write(`[${new Date().toISOString()}] ERROR: ${message}\n`);
+      serverLogStream?.write(`[${formatLogTimestamp()}] ERROR: ${message}\n`);
     });
 
     // Handle process exit
@@ -205,7 +222,7 @@ async function startServer() {
         `Server process exited with code: ${code}, signal: ${signal}`,
       );
       serverLogStream?.write(
-        `[${new Date().toISOString()}] Server exited: code=${code}, signal=${signal}\n`,
+        `[${formatLogTimestamp()}] Server exited: code=${code}, signal=${signal}\n`,
       );
       if (serverLogStream) {
         serverLogStream.end();
