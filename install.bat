@@ -18,21 +18,9 @@ echo Node.js found:
 node --version
 echo.
 
-REM Step 0: Initialize server dependencies
-echo [0/4] Initializing server dependencies...
-node init-server.js
-if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Failed to initialize server dependencies
-    echo.
-    echo Try: clean.bat then install.bat
-    exit /b 1
-)
-echo Server dependencies initialized successfully.
-echo.
-
 REM Step 1: Install Node.js dependencies
-echo [1/4] Installing Node.js dependencies...
-call npm install --no-optional --no-save-optional
+echo [1/3] Installing Node.js dependencies...
+call npm install
 if %ERRORLEVEL% NEQ 0 (
     echo ERROR: Failed to install Node.js dependencies
     echo.
@@ -43,9 +31,9 @@ echo Node.js dependencies installed successfully.
 echo.
 
 REM Step 2: Install frontend dependencies
-echo [2/4] Installing frontend dependencies...
+echo [2/3] Installing frontend dependencies...
 cd frontend
-call npm install --no-optional --no-save-optional
+call npm install
 if %ERRORLEVEL% NEQ 0 (
     echo ERROR: Failed to install frontend dependencies
     cd ..
@@ -56,7 +44,7 @@ cd ..
 echo.
 
 REM Step 3: Build frontend
-echo [3/4] Building frontend...
+echo [3/3] Building frontend...
 cd frontend
 call npm run build
 if %ERRORLEVEL% NEQ 0 (

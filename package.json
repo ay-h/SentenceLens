@@ -21,7 +21,11 @@
       "output": "release",
       "buildResources": "resources"
     },
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "server/**/*",
+      "node_modules/**/*"
+    ],
     "files": [
       "main.js",
       "preload.js",
@@ -29,8 +33,7 @@
       "renderer/**/*",
       "resources/**/*",
       "data/**/*",
-      "node_modules/sql.js/dist/**/*",
-      "node_modules/tesseract.js/dist/**/*"
+      "node_modules/**/*"
     ],
     "win": {
       "target": [

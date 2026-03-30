@@ -195,8 +195,11 @@ async function startServer() {
     await fsPromises.mkdir(path.dirname(logFile), { recursive: true });
     serverLogStream = fs.createWriteStream(logFile, { flags: "a" });
 
+    const serverCwd = __dirname.includes("app.asar")
+      ? __dirname.replace("app.asar", "app.asar.unpacked")
+      : __dirname;
     server = spawn("node", ["server/app.js"], {
-      cwd: __dirname,
+      cwd: serverCwd,
       env: {
         ...process.env,
         APP_DATA_DIR: currentDir,
