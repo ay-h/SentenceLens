@@ -105,9 +105,9 @@ async function analyzeSentence(sentence, baseUrl, apiKey, model) {
       { role: 'user', content: prompt },
     ], {
       temperature: 0.1,
-      maxTokens: 2500,
+      maxTokens: 5000,
       jsonMode: true,
-      timeout: 30000,
+      timeout: 60000,
     });
 
     const apiTime = ((Date.now() - startTime) / 1000).toFixed(2);
