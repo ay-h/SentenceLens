@@ -7,10 +7,25 @@ const Tesseract = require("tesseract.js");
 const path = require("path");
 const fs = require("fs");
 
+// Local path to eng.traineddata (project root, 2 levels up from server/services/)
+const LANG_DATA_DIR = path.join(__dirname, "../..");
+
 class OCRService {
   constructor() {
     this.worker = null;
     this.isInitialized = false;
+  }
+
+  /**
+   * Get tesseract.js worker options for local language data.
+   * Uses the bundled eng.traineddata so no network fetch is needed.
+   */
+  _getWorkerOptions() {
+    return {
+      cachePath: LANG_DATA_DIR,
+      cacheMethod: "readOnly",
+      gzip: false,
+    };
   }
 
   /**
@@ -21,8 +36,9 @@ class OCRService {
     if (this.isInitialized) return;
 
     console.log("Initializing tesseract.js worker...");
+    console.log(`Language data directory: ${LANG_DATA_DIR}`);
     try {
-      this.worker = await Tesseract.createWorker("eng");
+      this.worker = await Tesseract.createWorker("eng", undefined, this._getWorkerOptions());
       this.isInitialized = true;
       console.log("tesseract.js worker initialized successfully");
     } catch (error) {
@@ -61,7 +77,7 @@ class OCRService {
 
     // Fallback: static Tesseract.recognize() — creates a temporary worker
     if (!result) {
-      result = await Tesseract.recognize(absolutePath, "eng");
+      result = await Tesseract.recognize(absolutePath, "eng", this._getWorkerOptions());
     }
 
     if (!result || !result.data || !result.data.text) {
@@ -92,7 +108,7 @@ class OCRService {
     }
 
     if (!result) {
-      result = await Tesseract.recognize(buffer, "eng");
+      result = await Tesseract.recognize(buffer, "eng", this._getWorkerOptions());
     }
 
     if (!result || !result.data || !result.data.text) {

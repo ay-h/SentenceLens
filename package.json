@@ -24,7 +24,8 @@
     "asar": true,
     "asarUnpack": [
       "server/**/*",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "eng.traineddata"
     ],
     "files": [
       "main.js",
@@ -33,7 +34,8 @@
       "renderer/**/*",
       "resources/**/*",
       "data/**/*",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "eng.traineddata"
     ],
     "win": {
       "target": [
