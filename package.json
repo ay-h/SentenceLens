@@ -1,8 +1,8 @@
 {
-  "name": "english-reading-helper",
+  "name": "sentence-lens",
   "version": "1.0.0",
-  "description": "English Reading Helper - Desktop Application (Pure Node.js)",
-  "author": "Your Name",
+  "description": "SentenceLens - Desktop Application (Pure Node.js)",
+  "author": "ay-a",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -15,8 +15,8 @@
     "build-linux": "npm run build-frontend && electron-builder --linux"
   },
   "build": {
-    "appId": "com.yourcompany.english-reading-helper",
-    "productName": "English Reading Helper",
+    "appId": "com.ay-a.SentenceLens",
+    "productName": "SentenceLens",
     "directories": {
       "output": "release",
       "buildResources": "resources"
