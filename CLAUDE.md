@@ -1,129 +1,129 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+此文件为 Claude Code (claude.ai/code) 在此代码库工作时提供指导。
 
-## Project Overview
+## 项目概述
 
-English Reading Helper is a pure Node.js Electron desktop application. It was migrated from a Python FastAPI backend to a Node.js Express.js backend, eliminating Python dependencies.
+SentenceLens 是一个纯 Node.js Electron 桌面应用程序。已从 Python FastAPI 后端迁移到 Node.js Express.js 后端，消除了 Python 依赖。
 
-**Architecture**: Electron main process → Express.js backend (port 8000) → React frontend
+**架构**：Electron 主进程 → Express.js 后端（端口 8000）→ React 前端
 
-## Common Commands
+## 常用命令
 
-### Development
+### 开发
 ```bash
-npm start              # Run Electron app
-npm run dev           # Run in dev mode
+npm start              # 运行 Electron 应用
+npm run dev           # 以开发模式运行
 ```
 
-### Building
+### 构建
 ```bash
-npm run build-frontend    # Build React frontend to renderer/
-npm run build             # Build full app (frontend + installer)
-npm run build-win         # Build Windows installer
-npm run build-mac         # Build macOS DMG
-npm run build-linux       # Build Linux AppImage
+npm run build-frontend    # 构建 React 前端到 renderer/
+npm run build             # 构建完整应用（前端 + 安装程序）
+npm run build-win         # 构建 Windows 安装程序
+npm run build-mac         # 构建 macOS DMG
+npm run build-linux       # 构建 Linux AppImage
 ```
 
-## Architecture
+## 架构
 
-### Main Process (main.js)
-- Manages Electron window lifecycle
-- Spawns Express.js server as child process
-- Handles data directory management and migration
-- Server runs on port 8000, health check at `/api/health`
-- Server logs to `{data_dir}/logs/server.log`
+### 主进程 (main.js)
+- 管理 Electron 窗口生命周期
+- 作为子进程启动 Express.js 服务器
+- 处理数据目录管理和迁移
+- 服务器运行在端口 8000，健康检查位于 `/api/health`
+- 服务器日志记录到 `{data_dir}/logs/server.log`
 
-### Backend (server/)
-- **server/app.js**: Express.js REST API, matches Python FastAPI routes exactly
-- **server/models/database.js**: SQLite using sql.js (pure JS WASM, no compilation)
-- **server/services/ocr.js**: tesseract.js v7 with local eng.traineddata
-- **server/services/llm.js**: OpenAI SDK for analysis and translation
-- **server/services/sentenceSplit.js**: Sentence splitting logic
+### 后端 (server/)
+- **server/app.js**：Express.js REST API，与 Python FastAPI 路由完全匹配
+- **server/models/database.js**：使用 sql.js 的 SQLite（纯 JS WASM，无需编译）
+- **server/services/ocr.js**：tesseract.js v7，使用本地 eng.traineddata
+- **server/services/llm.js**：OpenAI SDK 用于分析和翻译
+- **server/services/sentenceSplit.js**：句子分割逻辑
 
-### Frontend
+### 前端
 - React + Vite + TailwindCSS
-- Builds to `renderer/` directory (loaded by Electron)
-- Communicates with backend via `http://127.0.0.1:8000/api/*`
-- State management via React Context
+- 构建到 `renderer/` 目录（由 Electron 加载）
+- 通过 `http://127.0.0.1:8000/api/*` 与后端通信
+- 使用 React Context 进行状态管理
 
-### Data Storage
-- **Data directory**: Configurable via UI, defaults to `{userData}/english-reading-helper/`
-- **Database**: SQLite (`{data_dir}/database.db`) using sql.js
-- **Uploads**: `{data_dir}/uploads/`
-- **Logs**: `{data_dir}/logs/server.log`
+### 数据存储
+- **数据目录**：可通过 UI 配置，默认为 `{userData}/english-reading-helper/`
+- **数据库**：SQLite (`{data_dir}/database.db`)，使用 sql.js
+- **上传文件**：`{data_dir}/uploads/`
+- **日志**：`{data_dir}/logs/server.log`
 
-## Key Technical Details
+## 关键技术细节
 
-### Server Process Management
-The Express.js server runs as a child process spawned by main.js. When modifying server code:
-1. The server needs to be restarted (app handles this automatically in dev)
-2. In production, changes require app rebuild
-3. Server logs to console and `server.log` with timezone-aware timestamps
+### 服务器进程管理
+Express.js 服务器作为 main.js 生成子进程运行。修改服务器代码时：
+1. 服务器需要重启（开发模式下应用自动处理）
+2. 生产环境中，更改需要重新构建应用
+3. 服务器日志输出到控制台和 `server.log`，带时区感知的时间戳
 
-### Database (sql.js)
-- Pure JavaScript WASM implementation of SQLite
-- Database file is manually saved/loaded (not connection-based)
-- Automatic save debounced to 500ms after writes
-- Schema matches Python version exactly with proper foreign key cascades
+### 数据库 (sql.js)
+- SQLite 的纯 JavaScript WASM 实现
+- 数据库文件手动保存/加载（非连接模式）
+- 写入后自动延迟 500ms 保存
+- 架构模式与 Python 版本完全一致，具有正确的外键级联
 
 ### OCR (tesseract.js v7)
-- Uses static `Tesseract.recognize()` API for reliability
-- Local `eng.traineddata` bundled to prevent network fetches
-- Falls back to temporary worker if persistent worker fails
-- Language data directory: project root (2 levels up from server/services/)
+- 使用静态 `Tesseract.recognize()` API 以确保可靠性
+- 捆绑本地 `eng.traineddata` 以防止网络获取
+- 如果持久化工作进程失败，则回退到临时工作进程
+- 语言数据目录：项目根目录（server/services/ 的上两级）
 
-### LLM Integration
-- OpenAI SDK v4.x with configurable endpoint
-- Supports DeepSeek, local LLMs, or any OpenAI-compatible API
-- Sentence analysis uses JSON mode for structured output
-- Translation uses batch processing with caching
+### LLM 集成
+- OpenAI SDK v4.x，可配置端点
+- 支持 DeepSeek、本地 LLM 或任何 OpenAI 兼容的 API
+- 句子分析使用 JSON 模式进行结构化输出
+- 翻译使用批处理和缓存
 
-## Build Configuration
+## 构建配置
 
 ### electron-builder
-- **asar**: Enabled (but unpacks server, node_modules, eng.traineddata)
-- **asarUnpack**: server/**/*, node_modules/**/*, eng.traineddata
-- **Windows**: NSIS installer with custom directory selection
-- **macOS**: DMG in Education category
-- **Linux**: AppImage in Education category
+- **asar**：启用（但解包 server、node_modules、eng.traineddata）
+- **asarUnpack**：server/**/*, node_modules/**/*, eng.traineddata
+- **Windows**：支持自定义目录选择的 NSIS 安装程序
+- **macOS**：教育类别的 DMG
+- **Linux**：教育类别的 AppImage
 
-### Frontend Build
-- Vite builds to `renderer/` directory
-- Loaded via `loadFile()` in main.js
-- Must build before electron-builder for production
+### 前端构建
+- Vite 构建到 `renderer/` 目录
+- 通过 main.js 中的 `loadFile()` 加载
+- 生产环境构建 electron-builder 前必须先构建前端
 
-## API Routes Reference
+## API 路由参考
 
-- `GET /api/health` - Health check
-- `POST /api/sessions` - Create session
-- `GET /api/sessions` - List sessions
-- `GET /api/sessions/:id` - Get session
-- `PUT /api/sessions/:id/title` - Update session title
-- `DELETE /api/sessions/:id` - Delete session (cascades to records)
-- `GET /api/sessions/:id/records` - Get session records
-- `GET /api/records/:id` - Get record with analyses
-- `GET /api/records/:id/sentences` - Get record sentences
-- `PUT /api/records/:id/name` - Update record name
-- `DELETE /api/records/:id` - Delete record
-- `POST /api/upload` - Upload image + OCR (multipart form)
-- `POST /api/text` - Process text input
-- `POST /api/analyze` - Analyze sentence (LLM)
-- `POST /api/analysis/delete` - Delete analysis by sentence
-- `GET /api/analysis/test/:record_id` - Test endpoint
-- `POST /api/translate` - Translate text (LLM, batch with cache)
-- `GET /api/records/:id/translations` - Get record translations
-- `GET /api/llm-config` - Get LLM config
-- `POST /api/llm-config` - Save LLM config
+- `GET /api/health` - 健康检查
+- `POST /api/sessions` - 创建会话
+- `GET /api/sessions` - 列出会话
+- `GET /api/sessions/:id` - 获取会话
+- `PUT /api/sessions/:id/title` - 更新会话标题
+- `DELETE /api/sessions/:id` - 删除会话（级联到记录）
+- `GET /api/sessions/:id/records` - 获取会话记录
+- `GET /api/records/:id` - 获取记录及其分析
+- `GET /api/records/:id/sentences` - 获取记录句子
+- `PUT /api/records/:id/name` - 更新记录名称
+- `DELETE /api/records/:id` - 删除记录
+- `POST /api/upload` - 上传图片 + OCR（多部分表单）
+- `POST /api/text` - 处理文本输入
+- `POST /api/analyze` - 分析句子 (LLM)
+- `POST /api/analysis/delete` - 按句子删除分析
+- `GET /api/analysis/test/:record_id` - 测试端点
+- `POST /api/translate` - 翻译文本 (LLM，批处理带缓存)
+- `GET /api/records/:id/translations` - 获取记录翻译
+- `GET /api/llm-config` - 获取 LLM 配置
+- `POST /api/llm-config` - 保存 LLM 配置
 
-## Important Files
+## 重要文件
 
-- `main.js` - Electron main process, server spawning, IPC handlers
-- `preload.js` - IPC context bridge (if exists)
-- `package.json` - App config, electron-builder settings
-- `server/app.js` - Express routes and middleware
-- `server/models/database.js` - SQLite operations
-- `server/services/ocr.js` - OCR worker and recognition
-- `server/services/llm.js` - LLM API calls
-- `server/services/prompt_template.txt` - Sentence analysis prompt
-- `eng.traineddata` - Tesseract English language data (must bundle)
+- `main.js` - Electron 主进程，服务器生成，IPC 处理程序
+- `preload.js` - IPC 上下文桥接（如果存在）
+- `package.json` - 应用配置，electron-builder 设置
+- `server/app.js` - Express 路由和中间件
+- `server/models/database.js` - SQLite 操作
+- `server/services/ocr.js` - OCR 工作进程和识别
+- `server/services/llm.js` - LLM API 调用
+- `server/services/prompt_template.txt` - 句子分析提示词
+- `eng.traineddata` - Tesseract 英语语言数据（必须捆绑）

@@ -1,17 +1,18 @@
-# English Reading Helper - Pure Node.js Desktop Application
+# SentenceLens - 纯 Node.js 桌面应用程序
 
-独立 Electron 桌面应用，完全使用 Node.js 实现，不依赖 Python。
+独立 Electron 桌面应用，完全使用 Node.js 实现。
 
-`★ 架构对比 ─────────────────────────────`
+`★ 技术栈 ─────────────────────────────`
 
-| 模块 | 原方案（Python） | 当前方案（纯 Node.js） |
-|------|------------------|---------------------|
-| **后端** | FastAPI (Python) | Express.js (Node.js) |
-| **数据库** | SQLite (Python) | better-sqlite3 (Node.js) |
-| **OCR** | pytesseract (Tesseract) | tesseract.js (WASM) |
-| **LLM** | OpenAI SDK (Python) | OpenAI SDK (Node.js) |
-| **依赖** | Python + Node.js | 仅 Node.js |
-| **安装大小** | ~200MB | ~100MB |
+| 模块 | 技术选型 |
+|------|----------|
+| **前端** | React + Vite + TailwindCSS |
+| **后端** | Express.js (Node.js) |
+| **数据库** | SQLite via sql.js (纯 JS WASM) |
+| **OCR** | tesseract.js v7.0.0 (WASM) |
+| **LLM** | OpenAI SDK v4.x (Node.js) |
+| **依赖** | 仅 Node.js |
+| **安装大小** | ~100-150MB |
 
 `─────────────────────────────────────────────────`
 
@@ -61,53 +62,42 @@ electron-desktop-app/
 
 ## 实现状态
 
-### ✅ 已完成
+### ✅ 核心功能已完全实现
 - Electron 主进程和窗口管理
-- Express.js 服务器骨架
-- 目录结构和文件组织
-- 前端 React 应用复制
+- Express.js 后端服务器（所有 API 路由）
+- SQLite 数据库（使用 sql.js，所有操作已实现）
+- tesseract.js OCR 服务（v7，本地 eng.traineddata 捆绑）
+- LLM 服务（OpenAI SDK，支持分析与翻译）
+- 句子分割服务
+- 前端 React 应用（构建到 renderer/）
+- 跨平台打包配置（electron-builder）
 
-### 🚧 需要实现
+### 🔧 架构特点
 
-查看 [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) 了解需要实现的具体内容。
-
-**关键 TODO 区域**：
-1. `server/models/database.js` - 数据库操作
-2. `server/services/ocr.js` - tesseract.js OCR
-3. `server/services/llm.js` - LLM 分析和翻译
-4. `server/app.js` - 路由实现
+- **离线优先**：OCR 和数据库可完全离线工作
+- **LLM 可配置**：支持 OpenAI、DeepSeek 或任何兼容的本地 LLM
+- **数据目录可配置**：用户可选择数据存储位置
+- **时区感知日志**：服务器日志记录带有时区信息的时间戳
 
 ## 开发流程
 
-### 1. 实现数据库
-```bash
-# 编辑 server/models/database.js
-# 实现所有标记为 TODO 的函数
-```
-
-### 2. 实现 OCR 服务
-```bash
-# 编辑 server/services/ocr.js
-# 配置 tesseract.js
-```
-
-### 3. 实现 LLM 服务
-```bash
-# 编辑 server/services/llm.js
-# 集成 OpenAI SDK
-```
-
-### 4. 完成路由实现
-```bash
-# 编辑 server/app.js
-# 实现上传、分析、翻译等路由
-```
-
-### 5. 测试
+### 运行应用
 ```bash
 npm start
-# 访问 http://127.0.0.1:8000
+# 启动 Electron 应用（自动启动后端服务器）
 ```
+
+### 开发模式
+```bash
+npm run dev
+# 以开发模式运行（支持热重载）
+```
+
+### 配置 LLM
+1. 启动应用后，进入设置页面
+2. 配置 API 端点（OpenAI、DeepSeek 或本地 LLM）
+3. 输入 API Key 和模型名称
+4. 保存配置后即可使用句子分析和翻译功能
 
 ## 构建分发包
 
@@ -119,24 +109,37 @@ npm run build-win
 
 ## 技术优势
 
-### 相比 Python 方案
-✅ **更小的安装包**：无需打包 Python 运行时
-✅ **更快的启动**：Node.js 启动更快
-✅ **统一的依赖**：仅需 Node.js
-✅ **离线 OCR**：tesseract.js WASM 完全本地运行
+### 架构优势
+✅ **纯 Node.js**：单一运行时，无 Python 依赖
+✅ **离线优先**：OCR 和数据库可完全离线工作
+✅ **WASM 技术**：tesseract.js 和 sql.js 使用 WebAssembly，无需编译
+✅ **可配置数据目录**：用户可选择数据存储位置
 
-### tesseract.js 优势
-✅ **无需 Tesseract 安装**：WASM 文件随应用分发
-✅ **跨平台一致**：所有平台行为相同
-✅ **浏览器优化**：利用 Worker 多线程
+### tesseract.js v7 特性
+✅ **本地语言数据**：eng.traineddata 捆绑，无需网络获取
+✅ **静态 API**：使用 Tesseract.recognize() 确保可靠性
+✅ **回退机制**：持久化工作进程失败时自动回退到临时工作进程
 
-## 下一步
+## API 路由
 
-1. 阅读 [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md)
-2. 按照指南实现各个模块
-3. 测试应用功能
-4. 构建分发包
+应用在 `http://127.0.0.1:8000` 上提供以下 API：
+
+- `GET /api/health` - 健康检查
+- `POST /api/sessions` - 创建会话
+- `GET /api/sessions` - 列出会话
+- `GET /api/sessions/:id/records` - 获取会话记录
+- `POST /api/upload` - 上传图片并执行 OCR
+- `POST /api/text` - 处理文本输入
+- `POST /api/analyze` - 分析句子 (LLM)
+- `POST /api/translate` - 翻译文本 (LLM，带缓存）
+- `GET /api/llm-config` - 获取 LLM 配置
+- `POST /api/llm-config` - 保存 LLM 配置
+
+## 项目文档
+
+- [CLAUDE.md](CLAUDE.md) - Claude Code 开发指导
+- [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) - 实现指南（架构参考）
 
 ## 许可证
 
-与原项目保持一致。
+MIT License

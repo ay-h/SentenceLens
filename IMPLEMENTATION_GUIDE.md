@@ -1,219 +1,186 @@
-# 实现指南 - English Reading Helper Electron 应用
+# 实现指南 - SentenceLens Electron 应用
 
-本文档详细说明了需要实现的功能模块。
+本文档描述当前实现状态和架构说明。
 
-## 📋 实现清单
+## ✅ 实现状态
 
 ### 阶段 1：数据库实现
 
 **文件**：`server/models/database.js`
 
-**需要实现的函数**：
+**实现状态**：✅ 已完全实现
 
-| 函数 | 描述 | 优先级 |
-|------|------|----------|
-| `initialize()` | 创建数据库连接和表结构 | 🔴 高 |
-| `createSession()` | 创建新会话 | 🔴 高 |
-| `getAllSessions()` | 获取所有会话 | 🔴 高 |
-| `getSession()` | 获取单个会话 | 🔴 高 |
-| `updateSessionTitle()` | 更新会话标题 | 🟡 中 |
-| `deleteSession()` | 删除会话（级联） | 🟡 中 |
-| `createRecord()` | 创建记录 | 🔴 高 |
-| `getRecord()` | 获取记录 | 🔴 高 |
-| `getRecordWithAnalyses()` | 获取记录及分析 | 🔴 高 |
-| `getRecordsBySession()` | 获取会话的记录 | 🔴 高 |
-| `updateRecordName()` | 更新记录名称 | 🟢 低 |
-| `deleteRecord()` | 删除记录（级联） | 🟡 中 |
-| `createAnalysis()` | 创建句子分析 | 🔴 高 |
-| `getAnalysisBySentence()` | 获取句子分析 | 🔴 高 |
-| `getAnalysesByRecord()` | 获取记录的分析 | 🔴 高 |
-| `deleteAnalysis()` | 删除分析 | 🟢 低 |
-| `updateLLMConfig()` | 更新 LLM 配置 | 🔴 高 |
-| `getLatestLLMConfig()` | 获取最新配置 | 🔴 高 |
-| `createTranslation()` | 创建翻译缓存 | 🟡 中 |
-| `getTranslationBySentence()` | 获取句子翻译 | 🔴 高 |
-| `getTranslationsByRecord()` | 获取记录翻译 | 🔴 高 |
+使用 sql.js（纯 JS WASM）实现的所有数据库操作：
+- 会话管理（创建、获取、更新、删除）
+- 记录管理（创建、获取、更新、删除）
+- 分析管理（创建、获取、删除）
+- 翻译管理（创建、获取、缓存）
+- LLM 配置管理
+- 外键级联和文件清理
 
 **数据库表结构**：
-```sql
-CREATE TABLE sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+使用时区感知的时间戳，包含 updated_at 字段以跟踪修改时间。
 
-CREATE TABLE records (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    image_path TEXT NOT NULL,
-    ocr_text TEXT NOT NULL,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-);
-
-CREATE TABLE sentence_analyses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_id INTEGER NOT NULL,
-    sentence TEXT NOT NULL,
-    analysis TEXT NOT NULL,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
-);
-
-CREATE TABLE sentence_translations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    record_id INTEGER NOT NULL,
-    original_sentence TEXT NOT NULL,
-    translated_sentence TEXT NOT NULL,
-    source_lang TEXT DEFAULT 'en',
-    target_lang TEXT DEFAULT 'zh',
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
-);
-
-CREATE TABLE llm_config (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    url TEXT NOT NULL,
-    api_key TEXT NOT NULL,
-    model TEXT NOT NULL,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-```
+---
 
 ### 阶段 2：OCR 服务实现
 
 **文件**：`server/services/ocr.js`
 
-**需要实现的功能**：
+**实现状态**：✅ 已完全实现
 
-| 函数 | 描述 | 优先级 |
-|------|------|----------|
-| `initialize()` | 初始化 tesseract.js worker | 🔴 高 |
-| `recognize(imagePath)` | 识别图片文本 | 🔴 高 |
-| `terminate()` | 清理 worker | 🟡 中 |
+**已实现的功能**：
+- `initialize()` - 初始化 tesseract.js v7 worker
+- `recognize(imagePath)` - 识别图片文本
+- `recognizeBuffer(buffer)` - 从缓冲区识别
+- `terminate()` - 清理 worker
 
-**实现要点**：
-- 使用 Tesseract.js v5.x
-- 支持英文识别
-- 错误处理和重试
-- 进度回调（可选）
+**技术特点**：
+- 使用 Tesseract.js v7（静态 API）
+- 捆绑本地 eng.traineddata（无需网络）
+- 持久化工作进程失败时自动回退
+- 完整的错误处理和日志记录
+
+---
 
 ### 阶段 3：LLM 服务实现
 
 **文件**：`server/services/llm.js`
 
-**需要实现的功能**：
+**实现状态**：✅ 已完全实现
 
-| 函数 | 描述 | 优先级 |
-|------|------|----------|
-| `initialize(url, apiKey, model)` | 初始化 OpenAI 客户端 | 🔴 高 |
-| `analyzeSentence(sentence)` | 分析句子结构 | 🔴 高 |
-| `translate(text, options)` | 翻译文本 | 🔴 高 |
+**已实现的功能**：
+- `analyzeSentence(sentence, url, apiKey, model)` - 分析句子结构
+- `translateSentencesBatch(sentences, recordId, ...)` - 批量翻译优化
 
-**实现要点**：
+**技术特点**：
 - 使用 OpenAI SDK v4.x
 - 支持自定义 API 端点（DeepSeek、本地 LLM）
-- 句子分析提示词（可参考原项目）
-- 批量翻译优化
-- 错误处理和重试
+- 结构化 JSON 输出（句子分析）
+- 翻译缓存集成
+- 批处理优化
+- 完整的错误处理和重试机制
 
-### 阶段 4：路由实现
+---
+
+### 阶段 4：API 路由实现
 
 **文件**：`server/app.js`
 
-**需要实现的路由**：
+**实现状态**：✅ 已完全实现
 
-| 路由 | 功能 | 优先级 |
-|------|------|----------|
-| `POST /api/upload` | 图片上传 + OCR | 🔴 高 |
-| `POST /api/text` | 文本处理 | 🔴 高 |
-| `POST /api/analyze` | 句子分析 | 🔴 高 |
-| `POST /api/translate` | 翻译 | 🔴 高 |
+**已实现的路由**：
+- 会话路由：创建、获取、更新、删除
+- 记录路由：创建、获取、更新、删除
+- 分析路由：分析、删除、测试端点
+- 翻译路由：翻译、获取翻译列表
+- 上传路由：图片上传 + OCR
+- 文本处理路由：直接文本输入
+- LLM 配置路由：获取、保存配置
 
-**实现要点**：
-- 文件上传处理（multer）
-- 错误响应标准化
-- 输入验证
+**技术特点**：
+- Express.js REST API
+- multer 文件上传处理
 - CORS 配置
+- 标准化错误响应
+- 时区感知日志记录
 
-## 💡 实现建议
+---
 
-### 1. 按阶段实现
-建议按阶段 1 → 2 → 3 → 4 的顺序实现，每个阶段完成后测试。
+## 架构概览
 
-### 2. 测试驱动开发
-实现每个函数后，编写简单的测试用例验证功能。
+### 技术栈
 
-### 3. 参考原项目
-原 Python 代码提供了完整的功能参考，可以：
-- 对比 API 响应格式
-- 参考提示词设计
-- 学习错误处理方式
+| 组件 | 技术 |
+|-------|------|
+| **前端** | React + Vite + TailwindCSS |
+| **后端** | Express.js (Node.js) |
+| **数据库** | SQLite via sql.js (WASM) |
+| **OCR** | tesseract.js v7 (WASM) |
+| **LLM** | OpenAI SDK v4.x |
+| **打包** | electron-builder |
 
-### 4. 使用 TypeScript（可选）
-虽然当前是 JavaScript，但可以逐步迁移到 TypeScript 以获得更好的类型安全。
+### 项目结构
 
-## 🔍 测试指南
-
-### 测试数据库
-```javascript
-const db = require('./server/models/database');
-await db.initialize();
-const session = await db.createSession('Test Session');
-console.log(session);
+```
+sentence-lens/
+├── main.js                  # Electron 主进程
+├── preload.js               # IPC 上下文桥接
+├── package.json              # 应用配置
+├── eng.traineddata          # Tesseract 语言数据（捆绑）
+├── server/                  # Express.js 后端
+│   ├── app.js               # 路由和中间件
+│   ├── models/
+│   │ │   └── database.js      # SQLite 操作
+│   └── services/
+│       ├── ocr.js           # OCR 服务
+│       ├── llm.js           # LLM 服务
+│       └── sentenceSplit.js   # 句子分割
+├── frontend/                # React 前端
+│   ├── src/                 # React 组件
+│   ├── dist/                 # 构建输出
+│   └── package.json
+└── renderer/                # 已构建的前端（由 Electron 加载）
 ```
 
-### 测试 OCR
-```javascript
-const ocr = require('./server/services/ocr');
-await ocr.initialize();
-const text = await ocr.recognize('path/to/image.png');
-console.log(text);
-```
+---
 
-### 测试 LLM
-```javascript
-const llm = require('./server/services/llm');
-llm.initialize('https://api.openai.com/v1', 'your-api-key', 'gpt-3.5-turbo');
-const analysis = await llm.analyzeSentence('Hello, world!');
-console.log(analysis);
-```
+## 关键特性
 
-### 测试 API
+### 离线优先架构
+- OCR 使用本地 tesseract.js WASM
+- 数据库使用 sql.js WASM
+- 完全离线的内容管理（阅读、组织、删除）
+
+### 跨平台一致性
+- 使用 Electron 框架确保 Windows、macOS、Linux 行为一致
+- WASM 服务保证跨平台一致结果
+
+### 可配置性
+- 数据目录可由用户通过 UI 配置
+- LLM 端点可配置（OpenAI、DeepSeek、本地 LLM）
+
+---
+
+## 运行应用
+
+### 开发模式
 ```bash
-# 健数据库和服务器
-node server/app.js
-
-# 测试健康检查
-curl http://localhost:8000/api/health
-
-# 测试会话创建
-curl -X POST http://localhost:8000/api/sessions \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Test Session"}'
+npm run dev
 ```
 
-## 🚀docs 发布前检查清单
+### 生产模式
+```bash
+npm start
+```
 
-- [ ] 所有数据库函数已实现并测试
-- [ ] OCR 服务正常工作
-- [ ] LLM 服务正常工作（需要 API key）
-- [ ] 所有 API 路由已实现
-- [ ] 错误处理完善
-- [ ] 日志记录完善
-- [ ] 前端构建成功
-- [ ] Electron 应用正常启动
-- [ ] 功能测试通过（图片上传、OCR、分析、翻译）
-- [ ] 分发包构建成功
+### 构建分发包
+```bash
+npm run build-win      # Windows
+npm run build-mac      # macOS
+npm run build-linux    # Linux
+```
 
-## 📞 获取帮助
+---
 
-如遇到问题：
-1. 查看原项目 Python 代码作为参考
-2. 检查 tesseract.js 和 OpenAI SDK 文档
-3. 检查 Express.js 和 better-sqlite3 文档
+## API 参考
+
+应用在 `http://127.0.0.1:8000` 上提供 REST API：
+
+- `GET /api/health` - 健康检查
+- `POST /api/sessions` - 创建会话
+- `GET /api/sessions` - 列出会话
+- `GET /api/sessions/:id/records` - 获取会话记录
+- `POST /api/upload` - 上传图片并执行 OCR
+- `POST /api/text` - 处理文本输入
+- `POST /api/analyze` - 分析句子 (LLM)
+- `POST /api/translate` - 翻译文本 (LLM，带缓存）
+- `GET /api/llm-config` - 获取 LLM 配置
+- `POST /api/llm-config` - 保存 LLM 配置
+
+---
 
 ## 相关文档
+
 - [README.md](README.md) - 项目概述
-- [README.md](../README.md) - 原项目文档
+- [CLAUDE.md](CLAUDE.md) - Claude Code 开发指导
