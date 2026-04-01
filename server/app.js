@@ -501,7 +501,7 @@ app.post('/api/word-lookup', async (req, res) => {
     const dictResult = dictionaryService.lookupFromDictionary(normalized);
     if (dictResult) {
       // Cache the dictionary result
-      db.createWordDefinition(normalized, dictResult, 'dictionary');
+      //db.createWordDefinition(normalized, dictResult, 'dictionary');
       console.log(`词库命中: ${normalized}`);
       return res.json({ definition: dictResult, source: 'dictionary', cached: false });
     }
