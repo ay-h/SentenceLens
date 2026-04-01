@@ -149,7 +149,7 @@ export default function TextDisplay() {
                     <span
                       key={ti}
                       onDoubleClick={(e) => handleWordDblClick(e, token)}
-                      className="hover:bg-yellow-100 hover:rounded transition-colors"
+                      className=""
                     >
                       {token}
                     </span>
