@@ -172,11 +172,24 @@ async function initialize() {
       )
     `);
 
+    // Create word_definitions table for word lookup cache
+    db.run(`
+      CREATE TABLE IF NOT EXISTS word_definitions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word TEXT NOT NULL UNIQUE,
+        definition_json TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'dictionary',
+        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
+      )
+    `);
+
     // Create indexes
     db.run('CREATE INDEX IF NOT EXISTS idx_records_session_id ON records(session_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_sentence_analyses_record_id ON sentence_analyses(record_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_sentence_translations_record_id ON sentence_translations(record_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_sentence_translations_record_index ON sentence_translations(record_id, sentence_index)');
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_word_definitions_word ON word_definitions(word)');
 
     // Save initial state
     saveToDisk();
@@ -496,6 +509,32 @@ function getTranslationsByRecord(recordId) {
 }
 
 /**
+ * ==================== Word Definition Operations ====================
+ */
+
+function getWordDefinition(word) {
+  const normalized = word.toLowerCase().trim();
+  return queryOne('SELECT * FROM word_definitions WHERE word = ?', [normalized]);
+}
+
+function createWordDefinition(word, definitionJson, source) {
+  const normalized = word.toLowerCase().trim();
+  const existing = getWordDefinition(normalized);
+  if (existing) {
+    execute(
+      'UPDATE word_definitions SET definition_json = ?, source = ?, updated_at = datetime("now", "localtime") WHERE word = ?',
+      [JSON.stringify(definitionJson), source, normalized]
+    );
+    return getWordDefinition(normalized);
+  }
+  execute(
+    'INSERT INTO word_definitions (word, definition_json, source) VALUES (?, ?, ?)',
+    [normalized, JSON.stringify(definitionJson), source]
+  );
+  return getWordDefinition(normalized);
+}
+
+/**
  * ==================== Utility Functions ====================
  */
 
@@ -535,6 +574,8 @@ module.exports = {
   createTranslation,
   getTranslationBySentence,
   getTranslationsByRecord,
+  getWordDefinition,
+  createWordDefinition,
   close,
   getDB,
 };

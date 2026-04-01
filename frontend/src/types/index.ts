@@ -89,3 +89,21 @@ export interface LLMConfig {
   api_key: string;
   model: string;
 }
+
+export interface WordPartOfSpeech {
+  pos: string;
+  meaning: string;
+}
+
+export interface WordDefinition {
+  word: string;
+  phonetic: string;
+  partsOfSpeech: WordPartOfSpeech[];
+  source: 'dictionary' | 'llm';
+}
+
+export interface WordLookupResponse {
+  definition: WordDefinition;
+  source: 'dictionary' | 'llm';
+  cached: boolean;
+}

@@ -313,9 +313,57 @@ async function translateSentencesBatch(sentences, recordId, baseUrl, apiKey, mod
   return results;
 }
 
+/**
+ * Look up a word definition using LLM.
+ * Returns structured word definition or throws on failure.
+ */
+async function lookupWord(word, baseUrl, apiKey, model) {
+  try {
+    const systemPrompt = '你是一个专业的英汉词典助手。请为给定的英语单词提供准确的中文释义，按词性分类。返回 JSON 格式。';
+
+    const userPrompt = `请为英语单词 "${word}" 提供中文释义。
+
+请严格按照以下 JSON 格式返回：
+{
+  "word": "${word}",
+  "phonetic": "音标（如 /wɜːrd/）",
+  "partsOfSpeech": [
+    {
+      "pos": "词性缩写（如 n, v, adj, adv, prep, conj）",
+      "meaning": "中文释义"
+    }
+  ]
+}
+
+要求：
+1. 音标使用国际音标
+2. 列出该单词所有常见词性及对应中文释义
+3. 释义简洁准确
+4. 只返回 JSON，不要多余文字`;
+
+    console.log(`LLM 查词: ${word}`);
+    const content = await callLLMAPI(baseUrl, apiKey, model, [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ], { jsonMode: true, timeout: 15000, maxTokens: 500 });
+
+    const result = JSON.parse(content);
+    return {
+      word: result.word || word,
+      phonetic: result.phonetic || '',
+      partsOfSpeech: result.partsOfSpeech || [],
+      source: 'llm',
+    };
+  } catch (error) {
+    console.error(`LLM 查词失败 (${word}):`, error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   analyzeSentence,
   batchTranslate,
   translateSentencesBatch,
   loadAnalysisPrompt,
+  lookupWord,
 };

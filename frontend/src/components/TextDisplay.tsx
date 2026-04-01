@@ -1,8 +1,10 @@
 import { ConfirmDialog } from '@/components/Dialog';
+import WordLookupPopover from '@/components/WordLookupPopover';
+import { useWordLookup } from '@/hooks/useWordLookup';
 import { useApp } from '@/store/AppContext';
 import type { SentenceAnalysis } from '@/types';
 import { Loader2, Search, Trash2, X } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 export default function TextDisplay() {
@@ -15,6 +17,23 @@ export default function TextDisplay() {
   const [analyzing, setAnalyzing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Word lookup
+  const { wordLookup, lookupWord, closeWordLookup } = useWordLookup();
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingClickRef = useRef<(() => void) | null>(null);
+
+  const handleWordDblClick = useCallback((e: React.MouseEvent<HTMLSpanElement>, word: string) => {
+    e.stopPropagation();
+    // Cancel any pending single-click
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+      pendingClickRef.current = null;
+    }
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    lookupWord(word, rect);
+  }, [lookupWord]);
 
   if (!currentRecord || sentences.length === 0) return null;
 
@@ -83,21 +102,36 @@ export default function TextDisplay() {
 
           const showActions = isSelected;
 
+          // Split sentence into word tokens for dblclick word lookup
+          const wordTokens = sentence.match(/[\p{L}\d''-]+|[^\p{L}\d''-]+/gu) || [sentence];
+
+          const handleSentenceClick = () => {
+            if (isSelected) {
+              cancelSelection();
+              closeWordLookup();
+              setAnalyzing(false);
+              setDeleting(false);
+              setDeleteOpen(false);
+              return;
+            }
+            setAnalyzing(false);
+            setDeleting(false);
+            setDeleteOpen(false);
+            handleSelectSentence(sentence.trim(), analysis);
+          };
+
           return (
             <div key={index} className="group">
               <span
                 onClick={() => {
-                  if (isSelected) {
-                    cancelSelection();
-                    setAnalyzing(false);
-                    setDeleting(false);
-                    setDeleteOpen(false);
-                    return;
-                  }
-                  setAnalyzing(false);
-                  setDeleting(false);
-                  setDeleteOpen(false);
-                  handleSelectSentence(sentence.trim(), analysis);
+                  // Delay single-click to allow dblclick to cancel it
+                  pendingClickRef.current = handleSentenceClick;
+                  if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+                  clickTimerRef.current = setTimeout(() => {
+                    pendingClickRef.current?.();
+                    pendingClickRef.current = null;
+                    clickTimerRef.current = null;
+                  }, 250);
                 }}
                 className={`inline cursor-pointer rounded px-1 py-0.5 text-[19px] leading-9 text-gray-900 transition-all ${
                   isSelected
@@ -108,7 +142,19 @@ export default function TextDisplay() {
                 }`}
                 style={isAnalyzed ? { borderBottom: '2px solid var(--color-success)' } : undefined}
               >
-                {sentence}
+                {wordTokens.map((token, ti) => {
+                  const isWord = /[\p{L}\d]/u.test(token);
+                  if (!isWord) return <span key={ti}>{token}</span>;
+                  return (
+                    <span
+                      key={ti}
+                      onDoubleClick={(e) => handleWordDblClick(e, token)}
+                      className="hover:bg-yellow-100 hover:rounded transition-colors"
+                    >
+                      {token}
+                    </span>
+                  );
+                })}
               </span>
 
               {showTranslation && translation && (
@@ -169,6 +215,7 @@ export default function TextDisplay() {
           );
         })}
       </div>
+      <WordLookupPopover state={wordLookup} onClose={closeWordLookup} />
     </div>
   );
 }

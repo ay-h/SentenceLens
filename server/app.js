@@ -14,6 +14,7 @@ const crypto = require('crypto');
 // Services
 const ocrService = require('./services/ocr');
 const llmService = require('./services/llm');
+const dictionaryService = require('./services/dictionary');
 const { splitSentences, cleanSentence } = require('./services/sentenceSplit');
 const db = require('./models/database');
 
@@ -474,6 +475,57 @@ app.get('/api/records/:id/translations', (req, res) => {
   }
 });
 
+// ==================== Word Lookup Routes ====================
+
+app.post('/api/word-lookup', async (req, res) => {
+  try {
+    const { word } = req.body;
+    if (!word || !word.trim()) {
+      return res.status(400).json({ detail: '请提供要查询的单词' });
+    }
+
+    const normalized = dictionaryService.normalizeWord(word);
+    if (!normalized) {
+      return res.status(400).json({ detail: '无效的单词' });
+    }
+
+    // 1. Check server-side cache (word_definitions table)
+    const cached = db.getWordDefinition(normalized);
+    if (cached) {
+      const definition = JSON.parse(cached.definition_json);
+      console.log(`查词缓存命中: ${normalized} (来源: ${cached.source})`);
+      return res.json({ definition, source: cached.source, cached: true });
+    }
+
+    // 2. Try local ECDICT dictionary
+    const dictResult = dictionaryService.lookupFromDictionary(normalized);
+    if (dictResult) {
+      // Cache the dictionary result
+      db.createWordDefinition(normalized, dictResult, 'dictionary');
+      console.log(`词库命中: ${normalized}`);
+      return res.json({ definition: dictResult, source: 'dictionary', cached: false });
+    }
+
+    // 3. Fallback to LLM
+    const config = db.getLatestLLMConfig();
+    if (!config) {
+      return res.status(400).json({ detail: '本地词库未收录该单词，且未配置 LLM。请先在设置中配置 LLM。' });
+    }
+
+    console.log(`词库未命中，调用 LLM 查词: ${normalized}`);
+    const llmResult = await llmService.lookupWord(normalized, config.url, config.api_key, config.model);
+
+    // Cache LLM result
+    db.createWordDefinition(normalized, llmResult, 'llm');
+    console.log(`LLM 查词成功并已缓存: ${normalized}`);
+
+    return res.json({ definition: llmResult, source: 'llm', cached: false });
+  } catch (error) {
+    console.error('查词失败:', error.message);
+    res.status(500).json({ detail: `查词失败: ${error.message}` });
+  }
+});
+
 // ==================== Server Start ====================
 
 async function startServer() {
@@ -485,6 +537,9 @@ async function startServer() {
 
     // Initialize database
     await db.initialize();
+
+    // Initialize dictionary (non-blocking, graceful if missing)
+    await dictionaryService.initDictionary();
 
     app.listen(PORT, '127.0.0.1', () => {
       console.log(`Server running on http://127.0.0.1:${PORT}`);

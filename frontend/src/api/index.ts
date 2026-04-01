@@ -7,6 +7,7 @@ import type {
     TextProcessResponse,
     Translation,
     UploadResponse,
+    WordLookupResponse,
 } from '@/types';
 
 // In Electron, frontend loads via file:// protocol, so we need absolute URL to Express server.
@@ -143,6 +144,25 @@ export async function getRecordTranslations(
   recordId: number,
 ): Promise<{ translations: Translation[]; has_translations: boolean }> {
   return request(`/api/records/${recordId}/translations`);
+}
+
+// ==================== Word Lookup ====================
+
+export async function lookupWord(
+  word: string,
+  signal?: AbortSignal,
+): Promise<WordLookupResponse> {
+  const res = await fetch(`${BASE}/api/word-lookup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ word }),
+    signal,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Request failed: ${res.status}`);
+  }
+  return res.json();
 }
 
 // ==================== LLM Config ====================
