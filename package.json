@@ -28,13 +28,6 @@
       "eng.traineddata",
       "data/dictionary/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "data/dictionary/",
-        "to": "dictionary",
-        "filter": ["**/*"]
-      }
-    ],
     "files": [
       "main.js",
       "preload.js",
