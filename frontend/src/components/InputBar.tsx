@@ -1,4 +1,9 @@
-import { useState, useRef, useCallback } from 'react';
+import {
+  useState,
+  useRef,
+  useCallback,
+  useLayoutEffect,
+} from 'react';
 import { Upload, Send } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { toast } from 'sonner';
@@ -7,8 +12,25 @@ export default function InputBar() {
   const { handleSendText, handleUploadImage, loading } = useApp();
   const [text, setText] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const TEXTAREA_MIN_HEIGHT = 38;
+  const TEXTAREA_MAX_HEIGHT = 220;
 
   const canSend = text.trim().length > 0 && !loading;
+
+  const adjustTextareaHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const nextHeight = Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT);
+    el.style.height = `${Math.max(nextHeight, TEXTAREA_MIN_HEIGHT)}px`;
+    el.style.overflowY = el.scrollHeight > TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden';
+  }, [TEXTAREA_MIN_HEIGHT, TEXTAREA_MAX_HEIGHT]);
+
+  useLayoutEffect(() => {
+    adjustTextareaHeight();
+  }, [text, adjustTextareaHeight]);
 
   const onSend = useCallback(async () => {
     const t = text.trim();
@@ -17,10 +39,17 @@ export default function InputBar() {
       await handleSendText(t);
       setText('');
       toast.success('文本处理成功');
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.style.height = `${TEXTAREA_MIN_HEIGHT}px`;
+          el.style.overflowY = 'hidden';
+        }
+      });
     } catch (err: unknown) {
       toast.error(`处理失败: ${err instanceof Error ? err.message : '未知错误'}`);
     }
-  }, [text, handleSendText]);
+  }, [text, handleSendText, TEXTAREA_MIN_HEIGHT]);
 
   const onFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -63,13 +92,14 @@ export default function InputBar() {
         </button>
 
         <textarea
+          ref={textareaRef}
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder="粘贴文本或点击左侧上传图片..."
           rows={1}
           className="flex-1 resize-none rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)] transition-colors"
-          style={{ minHeight: '38px', maxHeight: '120px' }}
+          style={{ minHeight: TEXTAREA_MIN_HEIGHT, overflowY: 'hidden' }}
         />
 
         <button

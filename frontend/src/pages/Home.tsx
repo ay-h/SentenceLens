@@ -1,5 +1,4 @@
 import AnalysisPanel from '@/components/AnalysisPanel';
-import BottomBar from '@/components/BottomBar';
 import ImageThumbnails from '@/components/ImageThumbnails';
 import InputBar from '@/components/InputBar';
 import Sidebar, { SidebarExpandButton } from '@/components/Sidebar';
@@ -42,7 +41,6 @@ export default function Home() {
             <ImageThumbnails />
             <TextActions />
             <TextDisplay />
-            <BottomBar />
           </>
         ) : (
           <>

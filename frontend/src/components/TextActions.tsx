@@ -50,26 +50,38 @@ export default function TextActions() {
   const hasTranslations = translations.length > 0;
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--color-border)] bg-white shrink-0">
-      <button
-        onClick={() => setRenameOpen(true)}
-        className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-gray-50 transition-colors"
-      >
-        <Edit3 size={12} />
-        重命名
-      </button>
+    <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-[var(--color-border)] bg-white shrink-0">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => setRenameOpen(true)}
+          className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-gray-50 transition-colors"
+        >
+          <Edit3 size={12} />
+          重命名
+        </button>
 
-      <button
-        onClick={onTranslate}
-        disabled={translating || loading}
-        className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-gray-50 transition-colors disabled:opacity-50"
-      >
-        {translating ? <Loader2 size={12} className="animate-spin" /> : <Languages size={12} />}
-        翻译文本
-      </button>
+        <button
+          onClick={onTranslate}
+          disabled={translating || loading}
+          className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-gray-50 transition-colors disabled:opacity-50"
+        >
+          {translating ? <Loader2 size={12} className="animate-spin" /> : <Languages size={12} />}
+          翻译文本
+        </button>
+
+        <span className="w-px h-4 bg-[var(--color-border)] mx-1" />
+
+        <button
+          onClick={() => setDeleteOpen(true)}
+          className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-[var(--color-danger)] text-[var(--color-danger)] hover:bg-red-50 hover:text-red-700 transition-colors"
+        >
+          <Trash2 size={12} />
+          删除
+        </button>
+      </div>
 
       {hasTranslations && (
-        <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)] cursor-pointer ml-2">
+        <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)] cursor-pointer">
           <input
             type="checkbox"
             checked={showTranslation}
@@ -79,16 +91,6 @@ export default function TextActions() {
           显示翻译
         </label>
       )}
-
-      <div className="flex-1" />
-
-      <button
-        onClick={() => setDeleteOpen(true)}
-        className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-[var(--color-danger)] text-[var(--color-danger)] hover:bg-red-50 transition-colors"
-      >
-        <Trash2 size={12} />
-        删除
-      </button>
 
       <PromptDialog
         open={renameOpen}
