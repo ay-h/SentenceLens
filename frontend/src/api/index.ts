@@ -77,6 +77,46 @@ export async function deleteRecord(id: number): Promise<{ success: boolean }> {
   return request(`/api/records/${id}`, { method: 'DELETE' });
 }
 
+// ==================== Text Edit ====================
+
+export async function editText(
+  recordId: number,
+  text: string,
+): Promise<{
+  success: boolean;
+  message: string;
+  changes: Array<{
+    sentenceIndex: number;
+    oldText: string | null;
+    newText: string | null;
+    type: 'added' | 'modified' | 'deleted' | 'unchanged';
+  }>;
+  summary: {
+    hasChanges: boolean;
+    modifiedCount: number;
+    deletedCount: number;
+    addedCount: number;
+    unchangedCount: number;
+  };
+  clearResults?: {
+    analysesCleared: number;
+    translationsCleared: number;
+    errors: Array<{ sentenceId?: number; index?: number; error: string }>;
+  };
+}> {
+  return request(`/api/records/${recordId}/text/edit`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+}
+
+export async function getUnsavedChanges(
+  recordId: number,
+): Promise<{ hasUnsavedChanges: boolean }> {
+  return request(`/api/records/${recordId}/unsaved-changes`);
+}
+
 // ==================== Upload & Text ====================
 
 export async function uploadImage(
@@ -140,10 +180,39 @@ export async function translateText(
   });
 }
 
+export async function smartTranslate(
+  recordId: number,
+  changedIndices?: number[],
+): Promise<{
+  record_id: number;
+  translations: Translation[];
+  translated_count: number;
+  failed_count: number;
+}> {
+  return request(`/api/records/${recordId}/translate/smart`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ changed_indices: changedIndices }),
+  });
+}
+
 export async function getRecordTranslations(
   recordId: number,
 ): Promise<{ translations: Translation[]; has_translations: boolean }> {
   return request(`/api/records/${recordId}/translations`);
+}
+
+// ==================== OCR Quality Assessment ====================
+
+export async function getRecordQuality(
+  recordId: number,
+): Promise<{
+  record_id: number;
+  ocr_quality: string | null;
+  confidence_avg: number | null;
+  needs_review: boolean;
+}> {
+  return request(`/api/records/${recordId}/quality`);
 }
 
 // ==================== Word Lookup ====================

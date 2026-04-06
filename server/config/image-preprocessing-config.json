@@ -1,0 +1,18 @@
+{
+  "deskewEnabled": true,
+  "deskewMinLineLength": 50,
+  "deskewAngleThreshold": 0.5,
+  "contrastEnabled": true,
+  "claheClipLimit": 2.0,
+  "claheTileGridSize": 8,
+  "sharpenEnabled": true,
+  "sharpenStrength": 1.5,
+  "sharpenRadius": 1,
+  "denoiseEnabled": true,
+  "bilateralDiameter": 9,
+  "bilateralSigmaColor": 75,
+  "bilateralDiameterSpace": 9,
+  "bilateralSigmaSpace": 75,
+  "qualityThreshold": 60.0,
+  "lowConfidenceThreshold": 50.0
+}

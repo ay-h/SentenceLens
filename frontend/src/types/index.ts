@@ -107,3 +107,60 @@ export interface WordLookupResponse {
   source: 'dictionary' | 'llm';
   cached: boolean;
 }
+
+export interface TextEditChange {
+  sentenceIndex: number;
+  oldText: string | null;
+  newText: string | null;
+  type: 'added' | 'modified' | 'deleted' | 'unchanged';
+}
+
+export interface TextEditResult {
+  success: boolean;
+  message: string;
+  changes: TextEditChange[];
+  summary: {
+    hasChanges: boolean;
+    modifiedCount: number;
+    deletedCount: number;
+    addedCount: number;
+    unchangedCount: number;
+  };
+  clearResults?: {
+    analysesCleared: number;
+    translationsCleared: number;
+    errors: Array<{ sentenceId?: number; index?: number; error: string }>;
+  };
+}
+
+export interface OCRQualityAssessment {
+  record_id: number;
+  ocr_quality: string | null;
+  confidence_avg: number | null;
+  needs_review: boolean;
+}
+
+export interface OCRPreprocessInfo {
+  steps_applied?: {
+    deskew?: { applied: boolean; angle?: number };
+    contrast?: { applied: boolean };
+    sharpen?: { applied: boolean };
+    denoise?: { applied: boolean };
+  };
+  processing_time_ms?: number;
+  quality_assessment?: {
+    overallConfidence: number;
+    qualityLevel: string;
+    needsReview: boolean;
+    suspiciousWords?: Array<{
+      word: string;
+      confidence: number;
+      bbox?: [number, number, number, number];
+      index: number;
+    }>;
+  };
+}
+
+export interface UploadResponseExtended extends UploadResponse {
+  preprocess_info?: OCRPreprocessInfo;
+}

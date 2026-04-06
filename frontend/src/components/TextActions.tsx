@@ -1,16 +1,20 @@
 import { ConfirmDialog, PromptDialog } from '@/components/Dialog';
 import { useApp } from '@/store/AppContext';
-import { Edit3, Languages, Loader2, Trash2 } from 'lucide-react';
+import { Edit3, Languages, Loader2, Trash2, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
 export default function TextActions() {
   const {
-    currentRecord, translations,
+    currentRecord, translations, isEditingText,
     showTranslation, toggleTranslation,
-    handleRenameRecord, handleDeleteRecord, handleTranslate, loading,
+    handleRenameRecord, handleDeleteRecord,
+    handleTranslate, handleSmartTranslate,
+    toggleTextEditing, loading,
   } = useApp();
+
   const [translating, setTranslating] = useState(false);
+  const [smartTranslating, setSmartTranslating] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -47,6 +51,33 @@ export default function TextActions() {
     }
   }
 
+  async function onSmartTranslate() {
+    setSmartTranslating(true);
+    try {
+      toast.info('正在智能翻译已修改的句子...');
+      const result = await handleSmartTranslate();
+      if (result) {
+        if (result.translated_count > 0) {
+          toast.success(`智能翻译完成！翻译了 ${result.translated_count} 个句子`);
+        } else {
+          toast.info('没有需要翻译的句子');
+        }
+        if (result.failed_count > 0) {
+          toast.warning(`${result.failed_count} 个句子翻译失败`);
+        }
+      }
+    } catch (err: unknown) {
+      toast.error(`智能翻译失败: ${err instanceof Error ? err.message : '未知错误'}`);
+    } finally {
+      setSmartTranslating(false);
+    }
+  }
+
+  function toggleEditMode() {
+    toggleTextEditing(!isEditingText);
+    toast.info(isEditingText ? '退出编辑模式' : '进入编辑模式');
+  }
+
   const hasTranslations = translations.length > 0;
 
   return (
@@ -61,12 +92,34 @@ export default function TextActions() {
         </button>
 
         <button
+          onClick={toggleEditMode}
+          disabled={translating || smartTranslating || loading}
+          className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border transition-colors disabled:opacity-50 ${
+            isEditingText
+              ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-foreground)]'
+              : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-gray-50'
+          }`}
+        >
+          <Edit3 size={12} />
+          {isEditingText ? '退出编辑' : '编辑文本'}
+        </button>
+
+        <button
           onClick={onTranslate}
-          disabled={translating || loading}
+          disabled={translating || smartTranslating || loading}
           className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-gray-50 transition-colors disabled:opacity-50"
         >
           {translating ? <Loader2 size={12} className="animate-spin" /> : <Languages size={12} />}
-          翻译文本
+          翻译全部
+        </button>
+
+        <button
+          onClick={onSmartTranslate}
+          disabled={translating || smartTranslating || loading}
+          className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-[var(--color-primary)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] transition-colors disabled:opacity-50"
+        >
+          {smartTranslating ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+          智能翻译
         </button>
 
         <span className="w-px h-4 bg-[var(--color-border)] mx-1" />

@@ -32,6 +32,7 @@ export function useAppStore() {
   const [showTranslation, setShowTranslation] = useState(() => {
     return loadFromStorage('showTranslation') === 'true';
   });
+  const [isEditingText, setIsEditingText] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Persist session state
@@ -256,6 +257,48 @@ export function useAppStore() {
     }
   }, [currentRecord, currentRecordId]);
 
+  // Smart translate - only translate changed sentences
+  const handleSmartTranslate = useCallback(async (changedIndices?: number[]) => {
+    if (!currentRecordId) return;
+    setLoading(true);
+    try {
+      const result = await api.smartTranslate(currentRecordId, changedIndices);
+      setTranslations(result.translations);
+      setShowTranslation(true);
+      saveToStorage('showTranslation', 'true');
+      return result;
+    } finally {
+      setLoading(false);
+    }
+  }, [currentRecordId]);
+
+  // Edit text
+  const handleEditText = useCallback(async (text: string) => {
+    if (!currentRecordId) return;
+    setLoading(true);
+    try {
+      const result = await api.editText(currentRecordId, text);
+      if (result.success) {
+        // Refresh record detail
+        await selectRecordRef.current(currentRecordId);
+        return result;
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [currentRecordId]);
+
+  // Toggle text editing
+  const toggleTextEditing = useCallback((value: boolean) => {
+    setIsEditingText(value);
+  }, []);
+
+  // Fetch current record data (for refreshing)
+  const fetchCurrentRecord = useCallback(async () => {
+    if (!currentRecordId) return;
+    await selectRecordRef.current(currentRecordId);
+  }, [currentRecordId]);
+
   // Toggle sidebar
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed(prev => {
@@ -325,6 +368,7 @@ export function useAppStore() {
     analysisVisible,
     sidebarCollapsed,
     showTranslation,
+    isEditingText,
     loading,
 
     // Actions
@@ -341,12 +385,16 @@ export function useAppStore() {
     handleDeleteRecord,
     handleRenameRecord,
     handleTranslate,
+    handleSmartTranslate,
+    handleEditText,
     toggleSidebar,
     toggleTranslation,
+    toggleTextEditing,
     handleSelectSentence,
     cancelSelection,
     closeAnalysis,
     restoreState,
+    fetchCurrentRecord,
     setLoading,
   };
 }

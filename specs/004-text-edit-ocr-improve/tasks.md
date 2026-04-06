@@ -26,10 +26,10 @@
 
 **目的**: 项目初始化和基础结构
 
-- [ ] T001 安装 opencv.js 依赖到 package.json
-- [ ] T002 [P] 创建图像预处理服务基础结构 server/services/imageProcessor.js
-- [ ] T003 [P] 创建文本编辑服务基础结构 server/services/textEdit.js
-- [ ] T004 配置 electron-builder asarUnpack 包含 opencv.js WASM 文件
+- [x] T001 安装 opencv.js 依赖到 package.json
+- [x] T002 [P] 创建图像预处理服务基础结构 server/services/imageProcessor.js
+- [x] T003 [P] 创建文本编辑服务基础结构 server/services/textEdit.js
+- [x] T004 配置 electron-builder asarUnpack 包含 opencv.js WASM 文件
 
 **检查点**: 基础设施就绪 - 用户故事实现现在可以开始
 
@@ -41,12 +41,12 @@
 
 **⚠️ 关键**: 任何用户故事工作不能在此阶段完成之前开始
 
-- [ ] T005 执行数据库迁移：添加文本编辑相关字段
-- [ ] T006 执行数据库迁移：添加 OCR 质量评估字段
-- [ ] T007 执行数据库迁移：创建优化索引
-- [ ] T008 扩展句子分割服务支持变更检测
-- [ ] T009 实现 OCR 质量评估基础功能
-- [ ] T010 配置图像预处理参数和阈值
+- [x] T005 执行数据库迁移：添加文本编辑相关字段
+- [x] T006 执行数据库迁移：添加 OCR 质量评估字段
+- [x] T007 执行数据库迁移：创建优化索引
+- [x] T008 扩展句子分割服务支持变更检测
+- [x] T009 实现 OCR 质量评估基础功能
+- [x] T010 配置图像预处理参数和阈值
 
 **检查点**: 基础设施就绪 - 用户故事实现现在可以开始
 
@@ -62,21 +62,21 @@
 
 > **注意：先写这些测试，确保失败后再实现**
 
-- [ ] T011 [P] [US1] 单元测试：句子变更检测逻辑 tests/unit/textEdit.test.js
-- [ ] T012 [P] [US1] 单元测试：翻译清除逻辑 tests/unit/textEdit.test.js
-- [ ] T013 [P] [US1] 集成测试：文本编辑完整流程 tests/integration/textEdit.test.js
+- [x] T011 [P] [US1] 单元测试：句子变更检测逻辑 tests/unit/textEdit.test.js
+- [x] T012 [P] [US1] 单元测试：翻译清除逻辑 tests/unit/textEdit.test.js
+- [x] T013 [P] [US1] 集成测试：文本编辑完整流程 tests/integration/textEdit.test.js
 
 ### Implementation for User Story 1
 
-- [ ] T014 [P] [US1] 实现句子变更检测算法 server/services/sentenceSplit.js (依赖 T008)
-- [ ] T015 [US1] 实现文本编辑保存 API 端点 server/app.js (路径: /api/records/:id/text/edit)
-- [ ] T016 [US1] 实现记录未保存更改状态管理 server/models/database.js
-- [ ] T017 [US1] 实现句子翻译和分析清除逻辑 server/services/textEdit.js
-- [ ] T018 [US1] 创建文本编辑组件 frontend/src/components/TextEditor.js
-- [ ] T019 [US1] 集成文本编辑到记录页面 frontend/src/pages/RecordPage.js
-- [ ] T020 [US1] 扩展 API 客户端支持文本编辑 frontend/src/services/api.js
+- [x] T014 [P] [US1] 实现句子变更检测算法 server/services/sentenceSplit.js (依赖 T008)
+- [x] T015 [US1] 实现文本编辑保存 API 端点 server/app.js (路径: /api/records/:id/text/edit)
+- [x] T016 [US1] 实现记录未保存更改状态管理 server/models/database.js
+- [x] T017 [US1] 实现句子翻译和分析清除逻辑 server/services/textEdit.js
+- [x] T018 [US1] 创建文本编辑组件 frontend/src/components/TextEditor.tsx
+- [x] T019 [US1] 集成文本编辑到记录页面 frontend/src/pages/Home.tsx
+- [x] T020 [US1] 扩展 API 客户端支持文本编辑 frontend/src/api/index.ts
 - [ ] T021 [US1] 添加用户编辑确认对话框（删除所有句子时）frontend/src/components/
-- [ ] T022 [US1] 添加文本编辑错误处理和用户提示 frontend/src/components/TextEditor.js
+- [x] T022 [US1] 添加文本编辑错误处理和用户提示 frontend/src/components/TextEditor.tsx
 
 **检查点**: 此时，User Story 1 应该完全功能并可独立测试
 
@@ -98,12 +98,12 @@
 
 ### Implementation for User Story 2
 
-- [ ] T026 [P] [US2] 实现智能翻译选择逻辑 server/services/llm.js (依赖 T014)
-- [ ] T027 [US2] 实现智能翻译 API 端点 server/app.js (路径: /api/records/:id/translate/smart)
-- [ ] T028 [US2] 修改翻译管理组件支持智能翻译 frontend/src/components/TranslationManager.js
-- [ ] T029 [US2] 添加翻译进度显示和用户反馈 frontend/src/components/TranslationManager.js
-- [ ] T030 [US2] 集成智能翻译按钮到记录页面 frontend/src/pages/RecordPage.js
-- [ ] T031 [US2] 扩展 API 客户端支持智能翻译 frontend/src/services/api.js
+- [x] T026 [P] [US2] 实现智能翻译选择逻辑 server/app.js (依赖 T014)
+- [x] T027 [US2] 实现智能翻译 API 端点 server/app.js (路径: /api/records/:id/translate/smart)
+- [x] T028 [US2] 修改翻译管理组件支持智能翻译 frontend/src/components/TextActions.tsx
+- [x] T029 [US2] 添加翻译进度显示和用户反馈 frontend/src/components/TextActions.tsx
+- [x] T030 [US2] 集成智能翻译按钮到记录页面 frontend/src/pages/Home.tsx
+- [x] T031 [US2] 扩展 API 客户端支持智能翻译 frontend/src/api/index.ts
 - [ ] T032 [US2] 添加网络错误处理和重试机制 frontend/src/components/TranslationManager.js
 
 **检查点**: 此时，User Story 1 和 2 应该都可以独立工作
@@ -128,17 +128,17 @@
 
 ### Implementation for User Story 3
 
-- [ ] T038 [P] [US3] 实现投影法歪斜校正 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
-- [ ] T039 [P] [US3] 实现 CLAHE 对比度调整 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
-- [ ] T040 [P] [US3] 实现 Unsharp Mask 锐化 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
-- [ ] T041 [P] [US3] 实现双边滤波降噪 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
-- [ ] T042 [US3] 集成图像预处理流水线 server/services/imageProcessor.js
+- [x] T038 [P] [US3] 实现投影法歪斜校正 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
+- [x] T039 [P] [US3] 实现 CLAHE 对比度调整 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
+- [x] T040 [P] [US3] 实现 Unsharp Mask 锐化 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
+- [x] T041 [P] [US3] 实现双边滤波降噪 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
+- [x] T042 [US3] 集成图像预处理流水线 server/services/imageProcessor.js
 - [ ] T043 [US3] 集成图像预处理到 OCR 服务 server/services/ocr.js
-- [ ] T044 [US3] 创建 OCR 预处理状态组件 frontend/src/components/OCRStatus.js
-- [ ] T045 [US3] 添加预处理进度显示 frontend/src/components/OCRStatus.js
-- [ ] T046 [US3] 集成预处理状态到记录页面 frontend/src/pages/RecordPage.js
+- [x] T044 [US3] 创建 OCR 预处理状态组件 frontend/src/components/OCRStatus.tsx
+- [x] T045 [US3] 添加预处理进度显示 frontend/src/components/OCRStatus.tsx
+- [x] T046 [US3] 集成预处理状态到输入栏 frontend/src/components/InputBar.tsx
 - [ ] T047 [US3] 扩展上传 API 端点支持预处理信息 server/app.js
-- [ ] T048 [US3] 添加预处理超时处理和取消功能 frontend/src/components/OCRStatus.js
+- [x] T048 [US3] 添加预处理超时处理和取消功能 frontend/src/components/OCRStatus.tsx
 
 **检查点**: 此时，User Story 3 应该可以独立工作并与现有 OCR 流程集成
 
@@ -160,13 +160,13 @@
 
 ### Implementation for User Story 4
 
-- [ ] T052 [P] [US4] 实现置信度分析算法 server/services/imageProcessor.js (依赖 T009)
-- [ ] T053 [US4] 实现低置信度单词标记逻辑 server/services/imageProcessor.js (依赖 T009)
-- [ ] T054 [US4] 实现质量评估 API 端点 server/app.js (路径: /api/records/:id/quality)
-- [ ] T055 [US4] 集成质量评估到记录显示组件 frontend/src/components/RecordDisplay.js
-- [ ] T056 [US4] 实现低置信度单词高亮显示 frontend/src/components/RecordDisplay.js
+- [x] T052 [P] [US4] 实现置信度分析算法 server/services/imageProcessor.js (依赖 T009)
+- [x] T053 [P] [US4] 实现低置信度单词标记逻辑 server/services/imageProcessor.js (依赖 T009)
+- [x] T054 [US4] 实现质量评估 API 端点 server/app.js (路径: /api/records/:id/quality)
+- [x] T055 [US4] 集成质量评估到记录显示组件 frontend/src/pages/Home.tsx
+- [x] T056 [US4] 实现低置信度单词高亮显示 frontend/src/components/QualityIndicator.tsx
 - [ ] T057 [US4] 添加质量提示对话框 frontend/src/components/
-- [ ] T058 [US4] 扩展 API 客户端支持质量评估 frontend/src/services/api.js
+- [x] T058 [US4] 扩展 API 客户端支持质量评估 frontend/src/api/index.ts
 
 **检查点**: 此时，所有用户故事应该都可以独立功能
 

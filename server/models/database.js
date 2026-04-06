@@ -83,6 +83,55 @@ function execute(sql, params = []) {
 }
 
 /**
+ * Run database migrations
+ */
+async function runMigrations() {
+  console.log('Running database migrations...');
+
+  // Get table info to check what columns exist
+  const getColumns = (tableName) => {
+    try {
+      const result = db.exec(`PRAGMA table_info(${tableName})`);
+      if (result && result.length > 0 && result[0].values) {
+        return result[0].values.map(row => row[1]); // Column name is at index 1
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  };
+
+  // Migration 001: Add text editing fields to records table
+  const recordsColumns = getColumns('records');
+  if (!recordsColumns.includes('has_unsaved_changes')) {
+    console.log('Migration 001: Adding has_unsaved_changes column to records');
+    db.run('ALTER TABLE records ADD COLUMN has_unsaved_changes INTEGER DEFAULT 0');
+  }
+  if (!recordsColumns.includes('ocr_quality')) {
+    console.log('Migration 001: Adding ocr_quality column to records');
+    db.run('ALTER TABLE records ADD COLUMN ocr_quality TEXT');
+  }
+  if (!recordsColumns.includes('confidence_avg')) {
+    console.log('Migration 001: Adding confidence_avg column to records');
+    db.run('ALTER TABLE records ADD COLUMN confidence_avg REAL');
+  }
+
+  // Migration 002: Add is_modified field to sentences table (if it exists)
+  try {
+    const sentencesColumns = getColumns('sentences');
+    if (!sentencesColumns.includes('is_modified')) {
+      console.log('Migration 002: Adding is_modified column to sentences');
+      db.run('ALTER TABLE sentences ADD COLUMN is_modified INTEGER DEFAULT 0');
+    }
+  } catch (e) {
+    // sentences table may not exist yet (we use sentence_analyses)
+    console.log('Migration 002: sentences table not found, skipping');
+  }
+
+  console.log('Migrations completed');
+}
+
+/**
  * Initialize database and create tables
  */
 async function initialize() {
@@ -190,6 +239,9 @@ async function initialize() {
     db.run('CREATE INDEX IF NOT EXISTS idx_sentence_translations_record_id ON sentence_translations(record_id)');
     db.run('CREATE INDEX IF NOT EXISTS idx_sentence_translations_record_index ON sentence_translations(record_id, sentence_index)');
     db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_word_definitions_word ON word_definitions(word)');
+
+    // Run migrations
+    await runMigrations();
 
     // Save initial state
     saveToDisk();

@@ -18,6 +18,12 @@ const dictionaryService = require('./services/dictionary');
 const { splitSentences, cleanSentence } = require('./services/sentenceSplit');
 const db = require('./models/database');
 
+// Initialize services
+const TextEditService = require('./services/textEdit');
+const textEditService = new TextEditService(db);
+const ImageProcessor = require('./services/imageProcessor');
+const imageProcessor = new ImageProcessor();
+
 const app = express();
 const PORT = 8000;
 
@@ -190,6 +196,175 @@ app.put('/api/records/:id/name', (req, res) => {
     }
     res.json(record);
   } catch (error) {
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+/**
+ * Edit record text - detect changes and clear related translations/analyses
+ */
+app.put('/api/records/:id/text/edit', async (req, res) => {
+  try {
+    const recordId = parseInt(req.params.id);
+    const { text } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ detail: 'Text is required' });
+    }
+
+    const result = await textEditService.handleTextEdit(recordId, text);
+    res.json(result);
+  } catch (error) {
+    console.error('Text edit error:', error);
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+/**
+ * Check if record has unsaved changes
+ */
+app.get('/api/records/:id/unsaved-changes', async (req, res) => {
+  try {
+    const recordId = parseInt(req.params.id);
+    const hasChanges = await textEditService.hasUnsavedChanges(recordId);
+    res.json({ hasUnsavedChanges: hasChanges });
+  } catch (error) {
+    console.error('Check unsaved changes error:', error);
+    res.status(500).json({ detail: error.message });
+  };
+});
+
+/**
+ * Smart translation - only translate changed sentences
+ */
+app.post('/api/records/:id/translate/smart', async (req, res) => {
+  try {
+    const recordId = parseInt(req.params.id);
+    const { changed_indices } = req.body; // Array of sentence indices that were modified
+
+    // Get LLM config
+    const config = db.getLatestLLMConfig();
+    if (!config) {
+      return res.status(400).json({ detail: '未配置LLM，请先在设置页面配置LLM' });
+    }
+
+    // Get record to get text
+    const record = db.getRecord(recordId);
+    if (!record) {
+      return res.status(404).json({ detail: '记录不存在' });
+    }
+
+    // Split and clean sentences
+    let sentences = splitSentences(record.ocr_text);
+    sentences = sentences.map(s => cleanSentence(s)).filter(s => s);
+
+    if (sentences.length === 0) {
+      return res.status(400).json({ detail: '没有找到可翻译的句子' });
+    }
+
+    // Determine which sentences to translate
+    let sentencesToTranslate = [];
+    let indicesToTranslate = [];
+
+    if (changed_indices && Array.isArray(changed_indices) && changed_indices.length > 0) {
+      // Only translate specified indices
+      for (const index of changed_indices) {
+        if (index >= 0 && index < sentences.length) {
+          sentencesToTranslate.push(sentences[index]);
+          indicesToTranslate.push(index);
+        }
+      }
+      console.log(`智能翻译：${indicesToTranslate.length} 个句子（索引: ${indicesToTranslate.join(', ')}）`);
+    } else {
+      // Translate all sentences (same as normal translation)
+      sentencesToTranslate = sentences;
+      indicesToTranslate = sentences.map((_, i) => i);
+      console.log(`智能翻译：所有 ${sentences.length} 个句子`);
+    }
+
+    // Translate selected sentences
+    const translationResults = await llmService.translateSentencesBatch(
+      sentencesToTranslate, recordId, config.url, config.api_key, config.model, db
+    );
+
+    // Map results back to original indices
+    const mappedResults = translationResults.map((result, i) => ({
+      ...result,
+      original_index: indicesToTranslate[i]
+    }));
+
+    // Check failures
+    const failedCount = translationResults.filter(r => r.error).length;
+    if (failedCount > 0) {
+      console.log(`⚠️  ${failedCount} sentences failed to translate`);
+    }
+
+    // Combine with existing translations if we only translated some
+    let allTranslations;
+    if (changed_indices && changed_indices.length > 0) {
+      // Get existing translations
+      const existingTranslations = db.getTranslationsByRecord(recordId);
+      const existingMap = new Map(existingTranslations.map(t => [t.sentence_index, t]));
+
+      // Merge
+      allTranslations = [...existingTranslations];
+      for (const result of mappedResults) {
+        if (!result.error) {
+          // Remove any existing translation at this index
+          allTranslations = allTranslations.filter(t => t.sentence_index !== result.original_index);
+          // Add new one
+          allTranslations.push({
+            record_id: recordId,
+            original_sentence: result.original_sentence,
+            translated_sentence: result.translated_sentence,
+            sentence_index: result.original_index
+          });
+        }
+      }
+    } else {
+      // We translated everything
+      allTranslations = translationResults
+        .filter(r => !r.error)
+        .map(r => ({
+          record_id: recordId,
+          original_sentence: r.original_sentence,
+          translated_sentence: r.translated_sentence,
+          sentence_index: r.original_index
+        }));
+    }
+
+    res.json({
+      record_id: recordId,
+      translations: allTranslations,
+      translated_count: mappedResults.filter(r => !r.error).length,
+      failed_count: failedCount
+    });
+  } catch (error) {
+    console.error('Smart translation failed:', error);
+    res.status(500).json({ detail: `智能翻译失败: ${error.message}` });
+  }
+});
+
+/**
+ * Get record OCR quality assessment
+ */
+app.get('/api/records/:id/quality', (req, res) => {
+  try {
+    const recordId = parseInt(req.params.id);
+    const record = db.queryOne('SELECT ocr_quality, confidence_avg FROM records WHERE id = ?', [recordId]);
+
+    if (!record) {
+      return res.status(404).json({ detail: '记录不存在' });
+    }
+
+    res.json({
+      record_id: recordId,
+      ocr_quality: record.ocr_quality,
+      confidence_avg: record.confidence_avg,
+      needs_review: record.confidence_avg !== null && record.confidence_avg < 60
+    });
+  } catch (error) {
+    console.error('Get quality error:', error);
     res.status(500).json({ detail: error.message });
   }
 });

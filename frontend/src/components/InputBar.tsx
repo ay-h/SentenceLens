@@ -7,12 +7,19 @@ import {
 import { Upload, Send } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { toast } from 'sonner';
+import OCRStatus from './OCRStatus';
 
 export default function InputBar() {
   const { handleSendText, handleUploadImage, loading } = useApp();
   const [text, setText] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [ocrProcessing, setOcrProcessing] = useState(false);
+  const [ocrStep, setOcrStep] = useState('');
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrQuality, setOcrQuality] = useState<string | null>(null);
+  const [ocrProcessingTime, setOcrProcessingTime] = useState<number | null>(null);
 
   const TEXTAREA_MIN_HEIGHT = 38;
   const TEXTAREA_MAX_HEIGHT = 220;

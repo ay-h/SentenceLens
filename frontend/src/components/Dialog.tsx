@@ -49,21 +49,23 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
 interface ConfirmDialogProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm?: () => void;
+  onConfirmWithCancel?: () => void;
   title?: string;
   message: string;
+  description?: string;
   confirmText?: string;
   cancelText?: string;
   danger?: boolean;
 }
 
 export function ConfirmDialog({
-  open, onClose, onConfirm, title = '确认操作',
+  open, onClose, onConfirmWithCancel, onConfirm, title = '确认操作',
   message, confirmText = '确定', cancelText = '取消', danger = false,
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onClose={onClose} title={title}>
-      <p className="text-sm text-gray-600 leading-relaxed mb-5">{message}</p>
+      {message && <p className="text-sm text-gray-600 leading-relaxed mb-5">{message}</p>}
       <div className="flex justify-end gap-2">
         <button
           onClick={onClose}
@@ -72,12 +74,16 @@ export function ConfirmDialog({
           {cancelText}
         </button>
         <button
-          onClick={() => { onConfirm(); onClose(); }}
-          className={`px-4 py-2 text-sm rounded-lg text-white transition-colors ${
-            danger
-              ? 'bg-[var(--color-danger)] hover:bg-[var(--color-danger-hover)]'
-              : 'bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)]'
-          }`}
+          onClick={() => {
+            if (onConfirmWithCancel) {
+              onConfirmWithCancel();
+            }
+            if (onConfirm) {
+              onConfirm();
+            }
+            onClose();
+          }}
+          className="px-4 py-2 text-sm rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] transition-colors"
         >
           {confirmText}
         </button>

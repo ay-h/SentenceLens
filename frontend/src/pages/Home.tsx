@@ -4,9 +4,12 @@ import InputBar from '@/components/InputBar';
 import Sidebar, { SidebarExpandButton } from '@/components/Sidebar';
 import TextActions from '@/components/TextActions';
 import TextDisplay from '@/components/TextDisplay';
+import TextEditor from '@/components/TextEditor';
+import QualityIndicator from '@/components/QualityIndicator';
 import { useApp } from '@/store/AppContext';
 import { FileText } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { getRecordQuality } from '@/api';
 
 function EmptyState() {
   return (
@@ -18,14 +21,24 @@ function EmptyState() {
 }
 
 export default function Home() {
-  const { currentRecord, sentences, restoreState } = useApp();
+  const { currentRecord, sentences, restoreState, isEditingText, toggleTextEditing } = useApp();
   const initialized = useRef(false);
+  const [quality, setQuality] = useState<any>(null);
 
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
     restoreState();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load quality assessment when record changes
+  useEffect(() => {
+    if (currentRecord?.id) {
+      getRecordQuality(currentRecord.id).then(setQuality).catch(console.error);
+    } else {
+      setQuality(null);
+    }
+  }, [currentRecord?.id]);
 
   const hasContent = currentRecord && sentences.length > 0;
 
@@ -38,9 +51,15 @@ export default function Home() {
       <div className="flex-1 flex flex-col min-w-0">
         {hasContent ? (
           <>
-            <ImageThumbnails />
-            <TextActions />
-            <TextDisplay />
+            {isEditingText ? (
+              <TextEditor onClose={() => toggleTextEditing(false)} />
+            ) : (
+              <>
+                <ImageThumbnails />
+                <TextActions />
+                <TextDisplay />
+              </>
+            )}
           </>
         ) : (
           <>
@@ -52,7 +71,9 @@ export default function Home() {
       </div>
 
       {/* Right analysis panel */}
-      <AnalysisPanel />
+      {currentRecord && (
+        <AnalysisPanel />
+      )}
     </div>
   );
 }

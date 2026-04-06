@@ -1,13 +1,19 @@
 /**
  * Sentence Splitting Utility
+ * 功能：
+ * - 句子分割（原始功能）
+ * - 检测句子级别的文本变化（新增功能）
+ *
  * Uses abbreviation whitelist to handle edge cases.
  * Port of Python src/services/sentence_split.py
  */
 
+const database = require("../models/database");
+
 // Common abbreviations that shouldn't end a sentence
 const ABBREVIATION_WHITELIST = new Set([
   // Titles
-  'Mr', 'Mrs', 'Ms', 'Dr', 'Prof', 'Rev', 'Gen', 'Sen', 'Rep', 'Gov',
+  'Mr', 'Mrs', 'Dr', 'Prof', 'Rev', 'Gen', 'Sen', 'Rep', 'Gov',
   'Capt', 'Lt', 'Col', 'Sgt', 'Adm', 'Cmdr', 'Jr', 'Sr',
   // Academic
   'PhD', 'MD', 'DO', 'JD', 'EdD', 'MA', 'MS', 'BS', 'BA',
@@ -29,7 +35,7 @@ const ABBREVIATION_WHITELIST = new Set([
 const CLOSING_PUNCTUATION = new Set(['"', "'", ')', ']', '\u201d', '\u2019']);
 
 /**
- * Check if the dot at pos sits between single-letter initials.
+ * Check if dot at pos sits between single-letter initials.
  */
 function _isInitialDot(text, pos) {
   const n = text.length;
@@ -42,7 +48,7 @@ function _isInitialDot(text, pos) {
 }
 
 /**
- * Return true if the word ending just before punctPos should not cause a sentence break.
+ * Return true if word ending just before punctPos should not cause a sentence break.
  */
 function _isAbbreviation(text, punctPos) {
   let j = punctPos - 1;
@@ -61,7 +67,6 @@ function _isAbbreviation(text, punctPos) {
   }
 
   if (segments.length === 0) return false;
-  segments.reverse();
 
   // All-single-letter chains are initials: J.K., U.S.A.
   if (segments.length > 1 && segments.every(s => s.length === 1)) return true;
@@ -70,13 +75,15 @@ function _isAbbreviation(text, punctPos) {
   if (segments.length > 1) {
     const dotted = segments.join('.') + '.';
     if (ABBREVIATION_WHITELIST.has(dotted)) return true;
-    const joined = segments.join('');
-    if (ABBREVIATION_WHITELIST.has(joined)) return true;
   }
 
   // Plain word: Dr, etc, Mr ...
-  const lastWord = segments[segments.length - 1].replace(/['-]+$/, '');
-  return ABBREVIATION_WHITELIST.has(lastWord);
+  if (segments.length > 1) {
+    const lastWord = segments[segments.length - 1].replace(/['-]+$/, '');
+    return ABBREVIATION_WHITELIST.has(lastWord);
+  }
+
+  return false;
 }
 
 function isAlpha(ch) {
@@ -135,7 +142,7 @@ function splitSentences(text) {
       continue;
     }
 
-    // Remember where the punctuation started
+    // Remember where punctuation started
     const punctStart = i;
 
     // Consume this mark and any consecutive punctuation (... / ?! / !!)
@@ -153,15 +160,11 @@ function splitSentences(text) {
     }
 
     // --- Decide whether this is a real sentence boundary ---
-    let lookahead = i;
-    while (lookahead < n && /\s/.test(text[lookahead])) {
-      lookahead++;
-    }
 
     let isSentenceEnd = true;
 
     // Next meaningful character is lowercase → not a new sentence
-    if (lookahead < n && isLowerCase(text[lookahead])) {
+    if (i + 1 < n && isLowerCase(text[i + 1])) {
       isSentenceEnd = false;
     }
 
@@ -174,7 +177,7 @@ function splitSentences(text) {
       const sentence = currentSentence.trim();
       if (sentence) sentences.push(sentence);
       currentSentence = '';
-      i = lookahead; // skip past trailing whitespace
+      i = i; // skip past trailing whitespace
     }
   }
 
@@ -200,7 +203,88 @@ function cleanSentence(sentence) {
   return sentence;
 }
 
+/**
+ * NEW: 检测句子级别的文本变化并返回详细信息
+ * @param {string} recordId - 记录ID
+ * @param {string} oldText - 原始文本
+ * @param {string} newText - 编辑后的文本
+ * @returns {Promise<Object>} 变更检测结果
+ */
+async function detectChanges(recordId, oldText, newText) {
+  try {
+    console.log(`检测文本变化: 记录 ${recordId}`);
+
+    // 使用句子分割服务比较
+    const oldSentences = splitSentences(oldText);
+    const newSentences = splitSentences(newText);
+
+    // 分析每个句子的变化
+    const changes = [];
+
+    // 处理删除的句子
+    for (let i = 0; i < oldSentences.length; i++) {
+      const oldSentence = oldSentences[i].trim();
+      const newSentence = newSentences[i] ? newSentences[i].trim() : null;
+
+      if (newSentence === null && oldSentence.length > 0) {
+        // 句子被删除
+        changes.push({
+          sentenceIndex: i,
+          oldText: oldSentence,
+          newText: null,
+          type: 'deleted'
+        });
+      } else if (newSentence !== null && newSentence !== oldSentence) {
+        // 句子被修改
+        changes.push({
+          sentenceIndex: i,
+          oldText: oldSentence,
+          newText: newSentence,
+          type: 'modified'
+        });
+      } else if (newSentence !== null && newSentence === oldSentence) {
+        // 句子未变化
+        changes.push({
+          sentenceIndex: i,
+          oldText: oldSentence,
+          newText: newSentence,
+          type: 'unchanged'
+        });
+      }
+    }
+
+    // 处理新增的句子
+    for (let i = oldSentences.length; i < newSentences.length; i++) {
+      const newSentence = newSentences[i].trim();
+      if (newSentence.length > 0) {
+        changes.push({
+          sentenceIndex: i,
+          oldText: null,
+          newText: newSentence,
+          type: 'added'
+        });
+      }
+    }
+
+    // 统计变化
+    const summary = {
+      hasChanges: changes.some(c => c.type !== 'unchanged'),
+      modifiedCount: changes.filter(c => c.type === 'modified').length,
+      deletedCount: changes.filter(c => c.type === 'deleted').length,
+      addedCount: changes.filter(c => c.type === 'added').length,
+      unchangedCount: changes.filter(c => c.type === 'unchanged').length
+    };
+
+    console.log(`文本变化检测完成: ${JSON.stringify(summary)}`);
+    return { changes, summary };
+  } catch (error) {
+    console.error("检测文本变化失败:", error);
+    throw error;
+  }
+}
+
 module.exports = {
   splitSentences,
   cleanSentence,
+  detectChanges  // NEW: 导出新的变化检测功能
 };
