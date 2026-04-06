@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const crypto = require('crypto');
+const iconv = require('iconv-lite');
 
 // Services
 const ocrService = require('./services/ocr');
@@ -68,6 +69,31 @@ const upload = multer({
 });
 
 // ==================== Helper Functions ====================
+
+/**
+ * Try to decode a filename that may have encoding issues
+ * Handles cases where filenames are incorrectly encoded (e.g., UTF-8 bytes interpreted as Latin1)
+ */
+function decodeFilename(filename) {
+  if (!filename) return filename;
+
+  // Try different encoding strategies
+
+  // Strategy 1: Try Windows-1252 to UTF-8 conversion (common issue on Windows)
+  try {
+    const buffer = Buffer.from(filename, 'binary');
+    const utf8String = iconv.decode(buffer, 'win1252');
+    // Check if it looks like valid UTF-8
+    if (!utf8String.includes('�')) {
+      return utf8String;
+    }
+  } catch (e) {
+    // Continue to next strategy
+  }
+
+  // If all else fails, return original
+  return filename;
+}
 
 function buildDefaultRecordName(rawName, fallback) {
   const name = (rawName || '').trim();
@@ -412,7 +438,9 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     sentences = sentences.map(s => cleanSentence(s)).filter(s => s);
 
     // Create record
-    const originalName = path.parse(req.file.originalname || '').name || '未命名图片';
+    // Decode filename to handle potential encoding issues
+    const decodedFilename = decodeFilename(req.file.originalname || '');
+    const originalName = path.parse(decodedFilename).name || '未命名图片';
     const recordName = buildDefaultRecordName(name, originalName);
     const record = db.createRecord(sessionId, recordName, imagePath, ocrText);
 

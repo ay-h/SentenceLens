@@ -205,7 +205,7 @@ export default function TextEditor({ onClose }: TextEditorProps) {
         />
       </div>
 
-      {/* Status Bar Bar */}
+      {/* Status Bar */}
       <div className="flex items-center justify-between px-4 py-2 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="text-sm text-[var(--color-text-muted)]">
           {hasUnsavedUserChanges() && (

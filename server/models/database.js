@@ -630,4 +630,6 @@ module.exports = {
   createWordDefinition,
   close,
   getDB,
+  queryOne,
+  execute,
 };

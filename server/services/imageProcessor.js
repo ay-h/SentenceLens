@@ -9,7 +9,7 @@
  * - OCR 质量评估（置信度分析）
  */
 
-const cv = require("opencv.js");
+const cv = require("@techstark/opencv-js");
 const path = require("path");
 const fs = require("fs");
 

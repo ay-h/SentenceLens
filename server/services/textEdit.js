@@ -13,10 +13,11 @@
  */
 
 const { splitSentences } = require("./sentenceSplit");
+const { queryOne, execute, getAnalysesByRecord, getTranslationsByRecord } = require("../models/database");
 
 class TextEditService {
-  constructor(db) {
-    this.db = db;
+  constructor(database) {
+    this.db = database;
   }
 
   /**
@@ -41,8 +42,7 @@ class TextEditService {
       for (let i = 0; i < oldSentences.length; i++) {
         const { oldText: oldSentence, newText: newSentence, type } = this.compareSentences(
           oldSentences[i],
-          newSentences[i],
-          i
+          newSentences[i]
         );
         changes.push({ sentenceIndex: i, oldText: oldSentence, newText: newSentence, type });
       }
@@ -80,7 +80,7 @@ class TextEditService {
   /**
    * 比较两个句子
    */
-  compareSentences(oldSentence, newSentence, index) {
+  compareSentences(oldSentence, newSentence) {
     const oldText = oldSentence.trim();
     const newText = newSentence ? newSentence.trim() : '';
 
@@ -117,7 +117,7 @@ class TextEditService {
       };
 
       // 获取所有句子分析
-      const analyses = this.db.getAnalysesByRecord(recordId);
+      const analyses = getAnalysesByRecord(recordId);
 
       // 清除被修改句子的分析
       for (const analysis of analyses) {
@@ -128,7 +128,7 @@ class TextEditService {
 
           if (change && (change.type === 'modified' || change.type === 'deleted')) {
             // 删除分析
-            this.db.queryOne(
+            execute(
               "DELETE FROM sentence_analyses WHERE id = ?",
               [analysis.id]
             );
@@ -145,7 +145,7 @@ class TextEditService {
       }
 
       // 获取所有翻译
-      const translations = this.db.getTranslationsByRecord(recordId);
+      const translations = getTranslationsByRecord(recordId);
 
       // 清除被修改句子的翻译
       for (const translation of translations) {
@@ -154,7 +154,7 @@ class TextEditService {
 
           if (change && (change.type === 'modified' || change.type === 'deleted')) {
             // 删除翻译
-            this.db.queryOne(
+            execute(
               "DELETE FROM sentence_translations WHERE id = ?",
               [translation.id]
             );
@@ -185,7 +185,7 @@ class TextEditService {
    */
   async setUnsavedChanges(recordId, hasChanges) {
     try {
-      this.db.queryOne(
+      execute(
         "UPDATE records SET has_unsaved_changes = ? WHERE id = ?",
         [hasChanges ? 1 : 0, recordId]
       );
@@ -205,7 +205,7 @@ class TextEditService {
    */
   async hasUnsavedChanges(recordId) {
     try {
-      const result = this.db.queryOne(
+      const result = queryOne(
         "SELECT has_unsaved_changes FROM records WHERE id = ?",
         [recordId]
       );
@@ -242,7 +242,7 @@ class TextEditService {
       if (!summary.hasChanges) {
         console.log("文本无实质变化");
         // 更新记录文本（可能只是标点/空格变化）
-        this.db.queryOne(
+        execute(
           "UPDATE records SET ocr_text = ? WHERE id = ?",
           [newText, recordId]
         );
@@ -265,7 +265,7 @@ class TextEditService {
       const clearResults = await this.clearModifiedTranslations(recordId, oldSentences, changes);
 
       // 更新记录文本
-      this.db.queryOne(
+      execute(
         "UPDATE records SET ocr_text = ? WHERE id = ?",
         [newText, recordId]
       );
