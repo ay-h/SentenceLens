@@ -41,12 +41,17 @@
 
 **⚠️ 关键**: 任何用户故事工作不能在此阶段完成之前开始
 
-- [x] T005 执行数据库迁移：添加文本编辑相关字段
-- [x] T006 执行数据库迁移：添加 OCR 质量评估字段
-- [x] T007 执行数据库迁移：创建优化索引
-- [x] T008 扩展句子分割服务支持变更检测
-- [x] T009 实现 OCR 质量评估基础功能
-- [x] T010 配置图像预处理参数和阈值
+### Database Schema Extensions
+
+- [ ] T005 创建数据库迁移脚本 `server/database/migrations/001_add_text_edit_fields.sql`，添加 `has_unsaved_changes` 到 records 表
+- [ ] T006 在 `server/database/migrations/001_add_text_edit_fields.sql` 添加 `is_modified`, `is_translation_stale`, `ocr_confidence`, `low_confidence_words` 到 sentences 表
+- [ ] T007 创建索引迁移 `server/database/migrations/002_create_indexes.sql`，创建 `idx_sentences_modified` 和 `idx_sentences_confidence` 索引
+
+### Image Preprocessing Infrastructure
+
+- [ ] T008 在 `server/config/preprocess.js` 创建 `ImagePreprocessorConfig` 配置对象，包含 perspective/deskew/adaptiveThreshold/textRegion/contrast/sharpen/denoise 配置
+- [ ] T009 在 `server/services/imageProcessor/smartSkip.js` 实现图像质量检测和智能跳过逻辑
+- [ ] T010 在 `server/services/imageProcessor/index.js` 创建图像预处理流水线管理器，支持步骤状态跟踪
 
 **检查点**: 基础设施就绪 - 用户故事实现现在可以开始
 
@@ -114,35 +119,57 @@
 
 ## Phase 5: User Story 3 - OCR图像预处理优化 (Priority: P2)
 
-**目标**: 系统能够自动识别并处理图像质量问题质量问题，提高拍照文档的OCR识别准确率
+**目标**: 基于最新 clarifications，实现完整的预处理流水线：透视矫正 → 去歪斜 → 自适应二值化 → 文本区域裁剪 → 锐化/降噪，将拍照文档OCR准确率从60%提升至95%+
 
-**独立测试**: 用户上传一张拍摄不理想的试卷照片，系统能够识别文字并准确率明显提高
+**独立测试**: 用户上传一张有透视变形、光照不均的试卷照片，系统经过完整预处理后识别准确率提升至95%+
 
 ### Tests for User Story 3 (REQUIRED) ⚠️
 
 > **注意：先写这些测试，确保失败后再实现**
 
-- [ ] T035 [P] [US3] 单元测试：歪斜校正算法 tests/unit/imageProcessor.test.js (使用 @testimg)
-- [ ] T036 [P] [US3] 单元测试：对比度调整算法 tests/unit/imageProcessor.test.js (使用 @testimg)
-- [ ] T037 [P] [US3] 单元测试：锐化算法 tests/unit/imageProcessor.test.js (使用 @testimg)
-- [ ] T038 [P] [US3] 单元测试：降噪算法 tests/unit/imageProcessor.test.js (使用 @testimg)
-- [ ] T039 [P] [US3] 集成测试：图像预处理完整流程 tests/integration/imageProcessor.test.js (使用 @testimg)
+- [ ] T035 [P] [US3] 单元测试：透视矫正算法 `tests/unit/imageProcessor/perspective.test.js` (使用 @testimg，目标成功率≥90%)
+- [ ] T036 [P] [US3] 单元测试：自适应二值化算法 `tests/unit/imageProcessor/adaptiveThreshold.test.js` (使用 @testimg)
+- [ ] T037 [P] [US3] 单元测试：文本区域检测算法 `tests/unit/imageProcessor/textRegion.test.js` (使用 @testimg)
+- [ ] T038 [P] [US3] 单元测试：歪斜校正算法 `tests/unit/imageProcessor/deskew.test.js` (使用 @testimg)
+- [ ] T039 [P] [US3] 单元测试：智能跳过逻辑 `tests/unit/imageProcessor/smartSkip.test.js`
+- [ ] T040 [P] [US3] 集成测试：完整预处理流水线 `tests/integration/ocr-preprocess.test.js` (使用 @testimg，目标总耗时≤6秒)
 
-### Implementation for User Story 3
+### New Preprocessing Modules (透视矫正、自适应二值化、文本区域裁剪)
 
-- [x] T040 [P] [US3] 实现投影法歪斜校正 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
-- [x] T041 [P] [US3] 实现 CLAHE 对比度调整 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
-- [x] T042 [P] [US3] 实现 Unsharp Mask 锐化 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
-- [x] T043 [P] [US3] 实现双边滤波降噪 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
-- [x] T044 [US3] 集成图像预处理流水线 server/services/imageProcessor.js
-- [ ] T045 [US3] 集成图像预处理到 OCR 服务 server/services/ocr.js
-- [x] T046 [US3] 创建 OCR 预处理状态组件 frontend/src/components/OCRStatus.tsx
-- [x] T047 [US3] 添加预处理进度显示 frontend/src/components/OCRStatus.tsx
-- [x] T048 [US3] 集成预处理状态到输入栏 frontend/src/components/InputBar.tsx
-- [ ] T049 [US3] 扩展上传 API 端点支持预处理信息 server/app.js
-- [x] T050 [US3] 添加预处理超时处理和取消功能 frontend/src/components/OCRStatus.tsx
+- [ ] T041 [P] [US3] 在 `server/services/imageProcessor/perspective.js` 实现透视矫正模块：Canny边缘检测 → 轮廓查找 → 四边形拟合 → 透视变换
+- [ ] T042 [P] [US3] 在 `server/services/imageProcessor/adaptiveThreshold.js` 实现自适应二值化模块：使用 OpenCV.js `adaptiveThreshold(ADAPTIVE_THRESH_GAUSSIAN_C)`
+- [ ] T043 [P] [US3] 在 `server/services/imageProcessor/textRegion.js` 实现文本区域检测与裁剪模块：边缘密度分析 + 形态学操作
 
-**检查点**: 此时，User Story 3 应该可以独立工作并与现有 OCR 流程集成
+### Pipeline Integration & API
+
+- [ ] T044 [US3] 在 `server/services/imageProcessor/index.js` 集成所有预处理步骤到流水线（perspective → deskew → adaptiveThreshold → textRegion → contrast → sharpen → denoise）
+- [ ] T045 [US3] 在 `server/services/imageProcessor/index.js` 实现预处理进度跟踪和步骤状态管理
+- [ ] T046 [US3] 在 `server/services/ocr.js` 集成图像预处理调用，实现 `enablePreprocessing` 参数支持
+- [ ] T047 [US3] 在 `server/routes/ocr.js` 实现 `POST /api/ocr/preprocess` 端点
+- [ ] T048 [US3] 在 `server/routes/ocr.js` 实现 `POST /api/ocr/recognize` 端点（含预处理选项）
+- [ ] T049 [US3] 在 `server/routes/ocr.js` 实现 `GET /api/ocr/preprocess/progress/:sessionId` 进度查询端点
+- [ ] T050 [US3] 在 `server/routes/ocr.js` 实现 `POST /api/ocr/preprocess/cancel/:sessionId` 取消预处理端点
+
+### Frontend Components
+
+- [ ] T051 [US3] 在 `frontend/src/components/OCRProgress/PreprocessProgress.tsx` 创建预处理进度显示组件
+- [ ] T052 [US3] 在 `frontend/src/api/ocr.ts` 创建OCR预处理API客户端
+- [ ] T053 [US3] 在 `frontend/src/components/OCRProgress/hooks/usePreprocessProgress.ts` 创建预处理进度Hook
+
+### Integration
+
+- [ ] T054 [US3] 在 `server/services/ocr.js` 实现清晰图片的智能跳过逻辑（跳过不必要的预处理步骤）
+- [ ] T055 [US3] 在 `server/services/imageProcessor/index.js` 实现预处理失败回退逻辑（跳过失败步骤继续OCR）
+- [ ] T056 [US3] 扩展 `server/routes/upload.js` 上传端点返回预处理信息
+
+**检查点**: OCR预处理应该将拍照文档识别准确率从60%提升至95%+
+
+### Success Criteria Verification
+
+- [ ] T057 [US3] 验证：透视矫正成功率≥90%（典型书页/试卷照片）
+- [ ] T058 [US3] 验证：自适应二值化正确应用率100%（光照不均照片）
+- [ ] T059 [US3] 验证：清晰图片预处理跳过率100%
+- [ ] T060 [US3] 验证：完整预处理流水线总耗时≤6秒（1920x1080照片）
 
 ---
 
@@ -191,15 +218,12 @@
 
 ### Implementation for User Story 5
 
-- [ ] T073 [P] [US5] 创建句子级独立编辑组件 frontend/src/components/TextEditor/SentenceEditor.jsx
-- [ ] T074 [P] [US5] 创建句子列表容器组件 frontend/src/components/TextEditor/SentenceList.jsx
-- [ ] T075 [P] [US5] 创建编辑按钮组件 frontend/src/components/TextEditor/EditButton.jsx
-- [ ] T076 [US5] 实现修改句子高亮显示逻辑 frontend/src/components/TextEditor/SentenceEditor.jsx
-- [ ] T077 [US5] 实现8-12px间距和无分隔线布局 frontend/src/components/TextEditor/SentenceList.jsx
-- [ ] T078 [US5] 集成编辑按钮与分析按钮并列显示 frontend/src/components/TextEditor/EditButton.jsx
-- [ ] T079 [US5] 修改现有文本编辑组件使用新布局 frontend/src/components/TextEditor.tsx
-- [ ] T080 [US5] 添加响应式布局支持 frontend/src/components/TextEditor/SentenceList.jsx
-- [ ] T081 [US5] 更新CSS样式支持句子级布局 frontend/src/components/TextEditor/SentenceEditor.css
+- [ ] T073 [P] [US5] 创建句子级独立编辑组件 `frontend/src/components/TextEditor/SentenceEditItem.tsx`
+- [ ] T074 [P] [US5] 创建文本编辑面板组件 `frontend/src/components/TextEditor/TextEditPanel.tsx`
+- [ ] T075 [US5] 实现修改句子高亮显示逻辑 `frontend/src/components/TextEditor/SentenceEditItem.tsx`
+- [ ] T076 [US5] 实现8-12px间距布局 `frontend/src/components/TextEditor/TextEditPanel.tsx`
+- [ ] T077 [US5] 集成编辑按钮与分析按钮并列显示 `frontend/src/pages/RecordDetail/TextEditableView.tsx`
+- [ ] T078 [US5] 创建文本编辑状态管理Hook `frontend/src/components/TextEditor/hooks/useTextEdit.ts`
 
 **检查点**: 此时，User Story 5 应该完全功能并可独立测试
 
@@ -209,82 +233,29 @@
 
 **目的**: 影响多个用户故事的改进
 
-- [ ] T082 [P] 文档更新：更新 README.md 和 CLAUDE.md
-- [ ] T083 [P] 代码清理和重构
-- [ ] T084 [P] 性能优化：预处理结果缓存
-- [ ] T085 [P] 性能优化：批量数据库更新
-- [ ] T086 [P] 安全加固：输入验证和清理
-- [ ] T087 运行 quickstart.md 验证
-- [ ] T088 [P] 更新 electron-builder 配置确保正确打包
-- [ ] T089 [P] 集成测试覆盖率报告
+- [ ] T079 [P] 文档更新：更新 README.md 和 API 文档
+- [ ] T080 [P] 代码清理和重构
+- [ ] T081 [P] 性能优化：预处理结果缓存
+- [ ] T082 [P] 性能优化：批量数据库更新
+- [ ] T083 [P] 安全加固：输入验证和清理
+- [ ] T084 运行 quickstart.md 验证
+- [ ] T085 [P] 确保 electron-builder 正确打包 OpenCV.js WASM
 
 ---
 
-## Dependencies & Execution Order
-
-### Phase Dependencies
-
-- **Setup (Phase 1)**: 无依赖 - 可以立即开始
-- **Foundational (Phase 2)**: 依赖 Setup 完成 - 阻塞所有用户故事
-- **User Stories (Phase 3+)**: 所有依赖 Foundational 阶段完成
-  - 用户故事可以随后并行进行（如果有人力）
-  - 或按优先级顺序执行（P1 → P2 → P3）
-- **Polish (Final Phase)**: 依赖所有期望的用户故事完成
-
-### User Story Dependencies
-
-- **User Story 1 (P1)**: 可以在 Foundational (Phase 2) 后开始 - 不依赖其他故事
-- **User Story 2 (P1)**: 可以在 Foundational (Phase 2) 后开始 - 可能与 US1 集成，但应独立测试
-- **User Story 3 (P2)**: 可以在 Foundational (Phase 2) 后开始 - 与 US1/US2 集成但应独立测试
-- **User Story 4 (P2)**: 可以在 Foundational (Phase 2) 后开始 - 可以独立工作或与 US3 集成
-- **User Story 5 (P1)**: 可以在 Foundational (Phase 2) 后开始 - 依赖 US1 的文本编辑基础功能
-
-### Within Each User Story
-
-- 测试（如果包含）必须在实现前编写并失败
-- 模型在服务前
-- 服务在端点前
-- 核心实现在集成前
-- 故事完成后才能移动到下一优先级
-
-### Parallel Opportunities
-
-- 所有 Setup 任务标记 [P] 可以并行运行
-- 所有 Foundational 任务标记 [P] 可以并行运行（在 Phase 2 内）
-- 一旦 Foundational 阶段完成，所有用户故事可以开始并行（如果团队容量允许）
-- 用户故事的所有测试标记 [P] 可以并行运行
-- 用户故事内的模型标记 [P] 可以并行运行
-- 不同用户故事可以由不同团队成员并行工作
-
----
-
-## Parallel Example: User Story 1
+## Parallel Example: User Story 3 (OCR预处理)
 
 ```bash
-# 一起启动 User Story 1 的所有测试：
-Task: "单元测试：句子变更检测逻辑"
-Task: "单元测试：翻译清除逻辑"
-Task: "集成测试：文本编辑完整流程"
+# 一起启动 User Story 3 的所有测试：
+Task: "单元测试：透视矫正算法"
+Task: "单元测试：自适应二值化算法"
+Task: "单元测试：文本区域检测算法"
+Task: "集成测试：完整预处理流水线"
 
-# 一起启动 User Story 1 的所有模型：
-Task: "实现句子变更检测算法"
-Task: "实现句子翻译和分析清除逻辑"
-```
-
-### Parallel Example: User Story 5
-
-```bash
-# 一起启动 User Story 5 的所有测试：
-Task: "单元测试：句子级独立编辑组件渲染"
-Task: "单元测试：修改句子高亮显示逻辑"
-Task: "单元测试：编辑按钮与分析按钮集成"
-Task: "集成测试：文本编辑布局优化完整流程"
-
-# 一起启动 User Story 5 的所有组件：
-Task: "创建句子级独立编辑组件"
-Task: "创建句子列表容器组件"
-Task: "创建编辑按钮组件"
-Task: "更新CSS样式支持句子级布局"
+# 一起启动 User Story 3 的所有模块：
+Task: "实现透视矫正模块"
+Task: "实现自适应二值化模块"
+Task: "实现文本区域检测模块"
 ```
 
 ---

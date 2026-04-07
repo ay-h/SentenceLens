@@ -15,6 +15,7 @@ ALTER TABLE records ADD COLUMN has_unsaved_changes INTEGER DEFAULT 0;
 ```
 
 **字段说明**:
+
 - `has_unsaved_changes`: 跟踪记录级别的编辑状态，防止用户在未保存时进行翻译操作
 
 ### sentences 表扩展
@@ -31,12 +32,18 @@ ALTER TABLE sentences ADD COLUMN ocr_confidence REAL;
 -- 存储低置信度单词的位置信息（JSON 格式）
 ALTER TABLE sentences ADD COLUMN low_confidence_words TEXT;
 -- 格式: [{"word": "text", "start": index, "end": index, "confidence": value}, ...]
+
+-- 标记翻译是否因文本编辑而过期
+ALTER TABLE sentences ADD COLUMN is_translation_stale INTEGER DEFAULT 0;
+-- 0 = 翻译有效, 1 = 翻译过期需要重新翻译
 ```
 
 **字段说明**:
+
 - `is_modified`: 标记句子是否被手动修改，用于智能重新翻译
 - `ocr_confidence`: 存储整体识别置信度，用于质量评估
 - `low_confidence_words`: 存储低置信度单词的详细位置信息，用于前端标记
+- `is_translation_stale`: 标记翻译是否因文本编辑而过期，用于智能翻译判断
 
 ## 实体关系
 
@@ -96,6 +103,7 @@ graph TD
 ```
 
 **详细流程**:
+
 1. 用户点击统一翻译按钮
 2. 检查记录的 has_unsaved_changes 状态
 3. 如果有未保存更改，提示用户先保存
@@ -107,56 +115,212 @@ graph TD
 
 ### 图像预处理配置
 
-#### 配置实体（内存中存储，不持久化）
+#### 配置实体（内存中存储，可持久化到用户配置）
 
-```
+```typescript
 ImagePreprocessorConfig {
-  // 歪斜校正
-  deskewEnabled: true,
-  deskewMinLineLength: 50,
-  deskewAngleThreshold: 0.5,
+  // 透视矫正
+  perspective: {
+    enabled: boolean;           // 默认: true
+    cannyThreshold1: number;    // Canny低阈值 (默认: 50)
+    cannyThreshold2: number;    // Canny高阈值 (默认: 150)
+    minContourAreaRatio: number; // 最小轮廓面积比例 (默认: 0.1)
+    approxPolyEpsilon: number;   // 多边形近似精度 (默认: 0.02)
+    confidenceThreshold: number; // 透视矫正置信度阈值 (默认: 0.8)
+  };
 
-  // 对比度调整
-  contrastEnabled: true,
-  claheClipLimit: 2.0,
-  claheTileGridSize: 8,
+  // 歪斜校正
+  deskew: {
+    enabled: boolean;           // 默认: true
+    angleRange: number[];       // 检测角度范围
+    angleThreshold: number;     // 应用校正的最小角度 (默认: 0.5)
+  };
+
+  // 自适应二值化
+  adaptiveThreshold: {
+    enabled: boolean;           // 默认: true
+    blockSize: number;          // 邻域块大小，奇数 (默认: 31)
+    constantC: number;          // 从均值减去的常数 (默认: 15)
+    method: 'GAUSSIAN' | 'MEAN'; // 自适应方法 (默认: 'GAUSSIAN')
+  };
+
+  // 文本区域检测
+  textRegion: {
+    enabled: boolean;           // 默认: true
+    edgeDensityThreshold: number;  // 边缘密度阈值 (默认: 0.1)
+    minRegionAreaRatio: number;    // 最小区域面积比例 (默认: 0.05)
+    marginPixels: number;          // 裁剪边距像素 (默认: 20)
+    minAspectRatio: number;        // 最小宽高比 (默认: 2.0)
+    maxAspectRatio: number;        // 最大宽高比 (默认: 20.0)
+  };
+
+  // 对比度调整 (CLAHE)
+  contrast: {
+    enabled: boolean;           // 默认: true
+    clipLimit: number;          // 对比度限制 (默认: 2.0)
+    tileGridSize: number;       // 网格大小 (默认: 8)
+  };
 
   // 锐化
-  sharpenEnabled: true,
-  sharpenStrength: 1.5,
-  sharpenRadius: 1,
+  sharpen: {
+    enabled: boolean;           // 默认: true
+    strength: number;           // 锐化强度 (默认: 1.5)
+    radius: number;             // 半径 (默认: 1)
+  };
 
-  // 降噪
-  denoiseEnabled: true,
-  bilateralDiameter: 9,
-  bilateralSigmaColor: 75,
-  bilateralSigmaSpace: 75,
+  // 降噪 (双边滤波)
+  denoise: {
+    enabled: boolean;           // 默认: true
+    diameter: number;           // 滤波直径 (默认: 9)
+    sigmaColor: number;         // 颜色空间sigma (默认: 75)
+    sigmaSpace: number;         // 坐标空间sigma (默认: 75)
+  };
 
   // 质量评估
-  qualityThreshold: 60.0,
-  lowConfidenceThreshold: 50.0
+  quality: {
+    overallThreshold: number;        // 整体质量阈值 (默认: 60)
+    lowConfidenceThreshold: number; // 低置信度阈值 (默认: 50)
+  };
 }
+```
+
+#### 默认配置对象
+
+```javascript
+const DEFAULT_PREPROCESS_CONFIG = {
+  perspective: {
+    enabled: true,
+    cannyThreshold1: 50,
+    cannyThreshold2: 150,
+    minContourAreaRatio: 0.1,
+    approxPolyEpsilon: 0.02,
+    confidenceThreshold: 0.8,
+  },
+  deskew: {
+    enabled: true,
+    angleRange: [-2.0, -1.5, -1.0, -0.5, 0, 0.5, 1.0, 1.5, 2.0],
+    angleThreshold: 0.5,
+  },
+  adaptiveThreshold: {
+    enabled: true,
+    blockSize: 31,
+    constantC: 15,
+    method: "GAUSSIAN",
+  },
+  textRegion: {
+    enabled: true,
+    edgeDensityThreshold: 0.1,
+    minRegionAreaRatio: 0.05,
+    marginPixels: 20,
+    minAspectRatio: 2.0,
+    maxAspectRatio: 20.0,
+  },
+  contrast: {
+    enabled: true,
+    clipLimit: 2.0,
+    tileGridSize: 8,
+  },
+  sharpen: {
+    enabled: true,
+    strength: 1.5,
+    radius: 1,
+  },
+  denoise: {
+    enabled: true,
+    diameter: 9,
+    sigmaColor: 75,
+    sigmaSpace: 75,
+  },
+  quality: {
+    overallThreshold: 60.0,
+    lowConfidenceThreshold: 50.0,
+  },
+};
 ```
 
 #### OCR 质量评估实体
 
-```
+```typescript
 OCRQualityAssessment {
-  recordId: number,
-  overallConfidence: number,      // 平均置信度
-  wordCount: number,                // 识别的单词数量
-  lowConfidenceWordCount: number,   // 低置信度单词数量
-  qualityLevel: 'high' | 'medium' | 'low',
-  assessmentTime: timestamp,
-  suspiciousWords: LowConfidenceWord[]
+  recordId: string;                 // 所属记录ID
+  imagePath: string;               // 处理的图片路径
+
+  // 整体质量指标
+  overallConfidence: number;       // 平均置信度 (0-100)
+  wordCount: number;               // 识别的单词数量
+  lowConfidenceWordCount: number;  // 低置信度单词数量
+  qualityLevel: 'high' | 'medium' | 'low' | 'unknown';
+  needsReview: boolean;            // 是否需要人工检查
+  assessedAt: Date;                // 评估时间
+
+  // 可疑单词详情
+  suspiciousWords: Array<{
+    index: number;                // 单词索引
+    text: string;                 // 单词文本
+    confidence: number;           // 置信度
+    bbox: { x: number; y: number; width: number; height: number };
+  }>;
+
+  // 预处理步骤记录
+  preprocessingSteps: Array<{
+    name: 'perspective' | 'deskew' | 'adaptiveThreshold' | 'textRegion' | 'contrast' | 'sharpen' | 'denoise';
+    applied: boolean;             // 是否应用
+    skipped: boolean;             // 是否被跳过
+    params?: Record<string, any>; // 使用的参数
+    processingTimeMs: number;     // 处理耗时
+    confidence?: number;          // 步骤置信度（如透视矫正）
+  }>;
+
+  // 原始OCR结果摘要
+  rawOCRResult: {
+    text: string;                 // 识别文本
+    confidence: number;          // 整体置信度
+    words: Array<any>;            // 单词级结果
+  };
 }
 
+// 低置信度单词
 LowConfidenceWord {
-  word: string,
-  startIndex: number,
-  endIndex: number,
-  confidence: number,
-  sentenceIndex: number
+  word: string;
+  confidence: number;
+  bbox: { x: number; y: number; width: number; height: number };
+  sentenceIndex: number;
+}
+```
+
+#### 预处理流水线状态实体
+
+```typescript
+PreprocessPipelineState {
+  sessionId: string;              // 处理会话ID
+  imagePath: string;              // 原始图像路径
+  startedAt: Date;                // 开始时间
+
+  // 当前状态
+  currentStep: string;            // 当前执行步骤
+  progress: number;               // 总进度 (0-100)
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+
+  // 各步骤状态
+  steps: Array<{
+    name: string;
+    status: 'pending' | 'running' | 'completed' | 'skipped' | 'failed';
+    progress: number;              // 步骤进度 (0-100)
+    result?: {
+      applied: boolean;           // 是否应用处理
+      params?: any;               // 使用的参数
+      metrics?: any;              // 处理指标
+    };
+    error?: string;              // 错误信息
+    processingTimeMs?: number; // 耗时
+  }>;
+
+  // 输出结果
+  outputImagePath?: string;        // 处理后图像路径
+  totalProcessingTimeMs?: number; // 总耗时
+
+  // 取消控制
+  isCancelled: boolean;          // 是否被取消
 }
 ```
 
@@ -179,13 +343,13 @@ LowConfidenceWord {
 
 ```sql
 -- 加速查找需要重新翻译的句子
-CREATE INDEX IF NOT EXISTS idx_sentences_modified 
-  ON sentences(record_id, is_modified) 
+CREATE INDEX IF NOT EXISTS idx_sentences_modified
+  ON sentences(record_id, is_modified)
   WHERE is_modified = 1;
 
 -- 加速查找低质量识别
-CREATE INDEX IF NOT EXISTS idx_sentences_confidence 
-  ON sentences(record_id, ocr_confidence) 
+CREATE INDEX IF NOT EXISTS idx_sentences_confidence
+  ON sentences(record_id, ocr_confidence)
   WHERE ocr_confidence < 60.0;
 ```
 
