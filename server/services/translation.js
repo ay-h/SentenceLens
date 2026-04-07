@@ -1,0 +1,276 @@
+/**
+ * Translation Service
+ * Handles unified translation logic with automatic change detection
+ */
+
+class TranslationService {
+  constructor(db, llmService) {
+    this.db = db;
+    this.llmService = llmService;
+  }
+
+  /**
+   * Get sentences from record text
+   * @param {Object} record - Record object with ocr_text
+   * @returns {Array} - Array of sentence objects
+   */
+  getSentencesFromRecord(record) {
+    if (!record || !record.ocr_text) {
+      return [];
+    }
+
+    // Import sentence splitting functions
+    const { splitSentences, cleanSentence } = require('./sentenceSplit');
+    
+    // Split and clean sentences
+    let sentences = splitSentences(record.ocr_text);
+    sentences = sentences.map(s => cleanSentence(s)).filter(s => s);
+
+    // Convert to sentence objects with mock properties for compatibility
+    return sentences.map((text, index) => ({
+      id: index + 1, // Use index as temporary ID
+      text: text,
+      translation: null, // Will be loaded separately
+      is_modified: 0 // Default value
+    }));
+  }
+
+  /**
+   * Get existing translations for a record
+   * @param {number} recordId - Record ID
+   * @returns {Array} - Array of translation objects
+   */
+  getExistingTranslations(recordId) {
+    try {
+      const translations = this.db.queryAll(
+        'SELECT * FROM sentence_translations WHERE record_id = ? ORDER BY sentence_index',
+        [recordId]
+      );
+      return translations;
+    } catch (error) {
+      console.error('Failed to get existing translations:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Detect which sentences need translation
+   * @param {Array} sentences - All sentences for the record
+   * @param {Array} existingTranslations - Existing translations
+   * @param {boolean} forceAll - Whether to translate all untranslated sentences
+   * @returns {Object} - { sentencesToTranslate, skippedCount, hasChanges }
+   */
+  detectSentencesToTranslate(sentences, existingTranslations, forceAll = false) {
+    if (!sentences || sentences.length === 0) {
+      return {
+        sentencesToTranslate: [],
+        skippedCount: 0,
+        hasChanges: false
+      };
+    }
+
+    let sentencesToTranslate = [];
+    let skippedCount = 0;
+
+    // Create a map of existing translations by sentence index
+    const translationMap = new Map();
+    existingTranslations.forEach(t => {
+      translationMap.set(t.sentence_index, t);
+    });
+
+    if (forceAll) {
+      // Translate all untranslated sentences
+      sentencesToTranslate = sentences.filter((s, index) => !translationMap.has(index));
+      skippedCount = sentences.length - sentencesToTranslate.length;
+    } else {
+      // For now, translate all untranslated sentences (since we don't have modification tracking)
+      sentencesToTranslate = sentences.filter((s, index) => !translationMap.has(index));
+      skippedCount = sentences.length - sentencesToTranslate.length;
+    }
+
+    const hasChanges = sentencesToTranslate.length > 0;
+
+    return {
+      sentencesToTranslate,
+      skippedCount,
+      hasChanges
+    };
+  }
+
+  /**
+   * Check if record has unsaved changes
+   * @param {number} recordId - Record ID
+   * @returns {boolean} - True if has unsaved changes
+   */
+  hasUnsavedChanges(recordId) {
+    const record = this.db.getRecord(recordId);
+    return record && record.has_unsaved_changes === 1;
+  }
+
+  /**
+   * Generate response for no changes scenario
+   * @param {Array} sentences - All sentences
+   * @returns {Object} - Response object for no changes
+   */
+  generateNoChangesResponse(sentences) {
+    return {
+      success: true,
+      data: {
+        translated_count: 0,
+        skipped_count: sentences.length,
+        no_changes_detected: true,
+        translations: []
+      },
+      message: '文本无变化，无需重新翻译'
+    };
+  }
+
+  /**
+   * Generate response for unsaved changes error
+   * @returns {Object} - Error response object
+   */
+  generateUnsavedChangesResponse() {
+    return {
+      success: false,
+      error: '有未保存的更改，请先保存',
+      code: 'UNSAVED_CHANGES'
+    };
+  }
+
+  /**
+   * Translate sentences and update database
+   * @param {Array} sentencesToTranslate - Sentences to translate
+   * @param {number} recordId - Record ID
+   * @param {Object} config - LLM configuration
+   * @param {number} skippedCount - Number of skipped sentences
+   * @returns {Object} - Translation result
+   */
+  async translateAndUpdateSentences(sentencesToTranslate, recordId, config, skippedCount) {
+    try {
+      // Extract sentence texts for translation
+      const sentenceTexts = sentencesToTranslate.map(s => s.text);
+
+      // Translate sentences
+      const translationResults = await this.llmService.translateSentencesBatch(
+        sentenceTexts, recordId, config.url, config.api_key, config.model, this.db
+      );
+
+      // Update database with new translations
+      let successfulTranslations = [];
+      for (let i = 0; i < sentencesToTranslate.length; i++) {
+        const sentence = sentencesToTranslate[i];
+        const result = translationResults[i];
+        
+        if (result && !result.error) {
+          // Create translation record
+          const translation = this.db.createTranslation(
+            recordId,
+            sentence.text,
+            result.translated_sentence,
+            sentence.id - 1 // Use 0-based index
+          );
+          
+          successfulTranslations.push({
+            sentence_id: sentence.id,
+            sentence_text: sentence.text,
+            translation: result.translated_sentence,
+            translation_time_ms: result.translation_time_ms || 100
+          });
+        } else {
+          console.log(`句子翻译失败: ${sentence.text}`);
+        }
+      }
+
+      const failedCount = sentencesToTranslate.length - successfulTranslations.length;
+      if (failedCount > 0) {
+        console.log(`⚠️  ${failedCount} 个句子翻译失败`);
+      }
+
+      return {
+        success: true,
+        data: {
+          translated_count: successfulTranslations.length,
+          skipped_count: skippedCount,
+          no_changes_detected: false,
+          translations: successfulTranslations
+        },
+        message: `已翻译${successfulTranslations.length}个句子，跳过${skippedCount}个未修改的句子`
+      };
+
+    } catch (error) {
+      console.error('翻译过程中发生错误:', error);
+      return {
+        success: false,
+        error: error.message || '翻译过程中发生错误'
+      };
+    }
+  }
+
+  /**
+   * Perform unified translation with automatic change detection
+   * @param {number} recordId - Record ID
+   * @param {boolean} forceAll - Whether to force translate all untranslated sentences
+   * @returns {Object} - Translation result
+   */
+  async performUnifiedTranslation(recordId, forceAll = false) {
+    try {
+      // Check for unsaved changes first
+      if (this.hasUnsavedChanges(recordId)) {
+        return this.generateUnsavedChangesResponse();
+      }
+
+      // Get record
+      const record = this.db.getRecord(recordId);
+      if (!record) {
+        return {
+          success: false,
+          error: '记录不存在'
+        };
+      }
+
+      // Get sentences from record text
+      const sentences = this.getSentencesFromRecord(record);
+      if (!sentences || sentences.length === 0) {
+        return {
+          success: false,
+          error: '没有找到可翻译的句子'
+        };
+      }
+
+      // Get existing translations
+      const existingTranslations = this.getExistingTranslations(recordId);
+
+      // Detect which sentences need translation
+      const { sentencesToTranslate, skippedCount, hasChanges } = 
+        this.detectSentencesToTranslate(sentences, existingTranslations, forceAll);
+
+      // Check if no changes detected
+      if (!hasChanges && !forceAll) {
+        return this.generateNoChangesResponse(sentences);
+      }
+
+      // Get LLM config
+      const config = this.db.getLatestLLMConfig();
+      if (!config) {
+        return {
+          success: false,
+          error: '未配置LLM，请先在设置页面配置LLM'
+        };
+      }
+
+      // Translate and update sentences
+      return await this.translateAndUpdateSentences(
+        sentencesToTranslate, recordId, config, skippedCount
+      );
+
+    } catch (error) {
+      console.error('统一翻译错误:', error);
+      return {
+        success: false,
+        error: error.message || '翻译过程中发生错误'
+      };
+    }
+  }
+}
+
+module.exports = TranslationService;

@@ -82,29 +82,31 @@
 
 ---
 
-## Phase 4: User Story 2 - 智能重新翻译 (Priority: P1) 🎯 MVP
+## Phase 4: User Story 2 - 统一翻译按钮 (Priority: P1) 🎯 MVP
 
-**目标**: 用户修改文本后，可以只重新翻译有变化的句子，而不是整篇重新翻译
+**目标**: 用户点击统一的翻译按钮时，系统自动检测文本变化并智能翻译需要翻译的句子
 
-**独立测试**: 用户修改了三句中的第二句，点击翻译按钮后只有第二句被重新翻译
+**独立测试**: 用户修改了三句中的第二句，点击翻译按钮后只有第二句被重新翻译，其他句子保持不变
 
 ### Tests for User Story 2 (REQUIRED) ⚠️
 
 > **注意：先写这些测试，确保失败后再实现**
 
-- [ ] T023 [P] [US2] 单元测试：句子选择逻辑 tests/unit/translation.test.js
-- [ ] T024 [P] [US2] 单元测试：未保存更改检查 tests/unit/translation.test.js
-- [ ] T025 [P] [US2] 集成测试：智能翻译完整流程 tests/integration/translation.test.js
+- [ ] T023 [P] [US2] 单元测试：统一翻译逻辑（自动检测变化） tests/unit/translation.test.js
+- [ ] T024 [P] [US2] 单元测试：无变化检测和提示逻辑 tests/unit/translation.test.js
+- [ ] T025 [P] [US2] 单元测试：未保存更改检查 tests/unit/translation.test.js
+- [ ] T026 [P] [US2] 集成测试：统一翻译完整流程 tests/integration/translation.test.js
 
 ### Implementation for User Story 2
 
-- [x] T026 [P] [US2] 实现智能翻译选择逻辑 server/app.js (依赖 T014)
-- [x] T027 [US2] 实现智能翻译 API 端点 server/app.js (路径: /api/records/:id/translate/smart)
-- [x] T028 [US2] 修改翻译管理组件支持智能翻译 frontend/src/components/TextActions.tsx
-- [x] T029 [US2] 添加翻译进度显示和用户反馈 frontend/src/components/TextActions.tsx
-- [x] T030 [US2] 集成智能翻译按钮到记录页面 frontend/src/pages/Home.tsx
-- [x] T031 [US2] 扩展 API 客户端支持智能翻译 frontend/src/api/index.ts
-- [ ] T032 [US2] 添加网络错误处理和重试机制 frontend/src/components/TranslationManager.js
+- [x] T027 [P] [US2] 实现统一翻译选择逻辑 server/app.js (依赖 T014)
+- [ ] T028 [US2] 修改翻译 API 端点为统一端点 server/app.js (路径: /api/records/:id/translate)
+- [ ] T029 [US2] 实现无变化检测和友好提示逻辑 server/services/translation.js
+- [ ] T030 [US2] 修改翻译管理组件为统一按钮 frontend/src/components/TextActions.tsx
+- [ ] T031 [US2] 添加翻译状态显示和用户反馈（包括无变化提示） frontend/src/components/TextActions.tsx
+- [ ] T032 [US2] 集成统一翻译按钮到记录页面 frontend/src/pages/Home.tsx
+- [x] T033 [US2] 扩展 API 客户端支持统一翻译 frontend/src/api/index.ts
+- [ ] T034 [US2] 添加网络错误处理和重试机制 frontend/src/components/TranslationManager.js
 
 **检查点**: 此时，User Story 1 和 2 应该都可以独立工作
 
@@ -120,25 +122,25 @@
 
 > **注意：先写这些测试，确保失败后再实现**
 
-- [ ] T033 [P] [US3] 单元测试：歪斜校正算法 tests/unit/imageProcessor.test.js (使用 @testimg)
-- [ ] T034 [P] [US3] 单元测试：对比度调整算法 tests/unit/imageProcessor.test.js (使用 @testimg)
-- [ ] T035 [P] [US3] 单元测试：锐化算法 tests/unit/imageProcessor.test.js (使用 @testimg)
-- [ ] T036 [P] [US3] 单元测试：降噪算法 tests/unit/imageProcessor.test.js (使用 @testimg)
-- [ ] T037 [P] [US3] 集成测试：图像预处理完整流程 tests/integration/imageProcessor.test.js (使用 @testimg)
+- [ ] T035 [P] [US3] 单元测试：歪斜校正算法 tests/unit/imageProcessor.test.js (使用 @testimg)
+- [ ] T036 [P] [US3] 单元测试：对比度调整算法 tests/unit/imageProcessor.test.js (使用 @testimg)
+- [ ] T037 [P] [US3] 单元测试：锐化算法 tests/unit/imageProcessor.test.js (使用 @testimg)
+- [ ] T038 [P] [US3] 单元测试：降噪算法 tests/unit/imageProcessor.test.js (使用 @testimg)
+- [ ] T039 [P] [US3] 集成测试：图像预处理完整流程 tests/integration/imageProcessor.test.js (使用 @testimg)
 
 ### Implementation for User Story 3
 
-- [x] T038 [P] [US3] 实现投影法歪斜校正 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
-- [x] T039 [P] [US3] 实现 CLAHE 对比度调整 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
-- [x] T040 [P] [US3] 实现 Unsharp Mask 锐化 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
-- [x] T041 [P] [US3] 实现双边滤波降噪 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
-- [x] T042 [US3] 集成图像预处理流水线 server/services/imageProcessor.js
-- [ ] T043 [US3] 集成图像预处理到 OCR 服务 server/services/ocr.js
-- [x] T044 [US3] 创建 OCR 预处理状态组件 frontend/src/components/OCRStatus.tsx
-- [x] T045 [US3] 添加预处理进度显示 frontend/src/components/OCRStatus.tsx
-- [x] T046 [US3] 集成预处理状态到输入栏 frontend/src/components/InputBar.tsx
-- [ ] T047 [US3] 扩展上传 API 端点支持预处理信息 server/app.js
-- [x] T048 [US3] 添加预处理超时处理和取消功能 frontend/src/components/OCRStatus.tsx
+- [x] T040 [P] [US3] 实现投影法歪斜校正 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
+- [x] T041 [P] [US3] 实现 CLAHE 对比度调整 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
+- [x] T042 [P] [US3] 实现 Unsharp Mask 锐化 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
+- [x] T043 [P] [US3] 实现双边滤波降噪 server/services/imageProcessor.js (使用 opencv.js，依赖 T002)
+- [x] T044 [US3] 集成图像预处理流水线 server/services/imageProcessor.js
+- [ ] T045 [US3] 集成图像预处理到 OCR 服务 server/services/ocr.js
+- [x] T046 [US3] 创建 OCR 预处理状态组件 frontend/src/components/OCRStatus.tsx
+- [x] T047 [US3] 添加预处理进度显示 frontend/src/components/OCRStatus.tsx
+- [x] T048 [US3] 集成预处理状态到输入栏 frontend/src/components/InputBar.tsx
+- [ ] T049 [US3] 扩展上传 API 端点支持预处理信息 server/app.js
+- [x] T050 [US3] 添加预处理超时处理和取消功能 frontend/src/components/OCRStatus.tsx
 
 **检查点**: 此时，User Story 3 应该可以独立工作并与现有 OCR 流程集成
 
@@ -154,19 +156,19 @@
 
 > **注意：先写这些测试，确保失败后再实现**
 
-- [ ] T049 [P] [US4] 单元测试：置信度分析 tests/unit/qualityAssessment.test.js
-- [ ] T050 [P] [US4] 单元测试：质量阈值判断 tests/unit/qualityAssessment.test.js
-- [ ] T051 [P] [US4] 集成测试：质量评估 API 端点 tests/integration/qualityAssessment.test.js
+- [ ] T051 [P] [US4] 单元测试：置信度分析 tests/unit/qualityAssessment.test.js
+- [ ] T052 [P] [US4] 单元测试：质量阈值判断 tests/unit/qualityAssessment.test.js
+- [ ] T053 [P] [US4] 集成测试：质量评估 API 端点 tests/integration/qualityAssessment.test.js
 
 ### Implementation for User Story 4
 
-- [x] T052 [P] [US4] 实现置信度分析算法 server/services/imageProcessor.js (依赖 T009)
-- [x] T053 [P] [US4] 实现低置信度单词标记逻辑 server/services/imageProcessor.js (依赖 T009)
-- [x] T054 [US4] 实现质量评估 API 端点 server/app.js (路径: /api/records/:id/quality)
-- [x] T055 [US4] 集成质量评估到记录显示组件 frontend/src/pages/Home.tsx
-- [x] T056 [US4] 实现低置信度单词高亮显示 frontend/src/components/QualityIndicator.tsx
-- [ ] T057 [US4] 添加质量提示对话框 frontend/src/components/
-- [x] T058 [US4] 扩展 API 客户端支持质量评估 frontend/src/api/index.ts
+- [x] T054 [P] [US4] 实现置信度分析算法 server/services/imageProcessor.js (依赖 T009)
+- [x] T055 [P] [US4] 实现低置信度单词标记逻辑 server/services/imageProcessor.js (依赖 T009)
+- [x] T056 [US4] 实现质量评估 API 端点 server/app.js (路径: /api/records/:id/quality)
+- [x] T057 [US4] 集成质量评估到记录显示组件 frontend/src/pages/Home.tsx
+- [x] T058 [US4] 实现低置信度单词高亮显示 frontend/src/components/QualityIndicator.tsx
+- [ ] T059 [US4] 添加质量提示对话框 frontend/src/components/
+- [x] T060 [US4] 扩展 API 客户端支持质量评估 frontend/src/api/index.ts
 
 **检查点**: 此时，所有用户故事应该都可以独立功能
 
@@ -176,14 +178,14 @@
 
 **目的**: 影响多个用户故事的改进
 
-- [ ] T059 [P] 文档更新：更新 README.md 和 CLAUDE.md
-- [ ] T060 [P] 代码清理和重构
-- [ ] T061 [P] 性能优化：预处理结果缓存
-- [ ] T062 [P] 性能优化：批量数据库更新
-- [ ] T063 [P] 安全加固：输入验证和清理
-- [ ] T064 运行 quickstart.md 验证
-- [ ] T065 [P] 更新 electron-builder 配置确保正确打包
-- [ ] T066 [P] 集成测试覆盖率报告
+- [ ] T061 [P] 文档更新：更新 README.md 和 CLAUDE.md
+- [ ] T062 [P] 代码清理和重构
+- [ ] T063 [P] 性能优化：预处理结果缓存
+- [ ] T064 [P] 性能优化：批量数据库更新
+- [ ] T065 [P] 安全加固：输入验证和清理
+- [ ] T066 运行 quickstart.md 验证
+- [ ] T067 [P] 更新 electron-builder 配置确保正确打包
+- [ ] T068 [P] 集成测试覆盖率报告
 
 ---
 

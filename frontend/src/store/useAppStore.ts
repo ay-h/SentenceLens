@@ -242,31 +242,24 @@ export function useAppStore() {
     }
   }, [currentRecordId, currentSessionId, currentRecord]);
 
-  // Translate
-  const handleTranslate = useCallback(async () => {
-    if (!currentRecord || !currentRecordId) return;
-    setLoading(true);
-    try {
-      await api.translateText(currentRecord.ocr_text, currentRecordId);
-      const transData = await api.getRecordTranslations(currentRecordId);
-      setTranslations(transData.translations);
-      setShowTranslation(true);
-      saveToStorage('showTranslation', 'true');
-    } finally {
-      setLoading(false);
-    }
-  }, [currentRecord, currentRecordId]);
-
-  // Smart translate - only translate changed sentences
-  const handleSmartTranslate = useCallback(async (changedIndices?: number[]) => {
+  // Unified translation - automatically detects changes and translates only needed sentences
+  const handleUnifiedTranslate = useCallback(async (forceAll = false) => {
     if (!currentRecordId) return;
     setLoading(true);
     try {
-      const result = await api.smartTranslate(currentRecordId, changedIndices);
-      setTranslations(result.translations);
-      setShowTranslation(true);
-      saveToStorage('showTranslation', 'true');
-      return result;
+      const result = await api.unifiedTranslate(currentRecordId, forceAll);
+      
+      if (result.success) {
+        // Refresh translations from server
+        const transData = await api.getRecordTranslations(currentRecordId);
+        setTranslations(transData.translations);
+        setShowTranslation(true);
+        saveToStorage('showTranslation', 'true');
+        
+        return result.data;
+      } else {
+        throw new Error(result.error);
+      }
     } finally {
       setLoading(false);
     }
@@ -384,8 +377,7 @@ export function useAppStore() {
     handleDeleteAnalysis,
     handleDeleteRecord,
     handleRenameRecord,
-    handleTranslate,
-    handleSmartTranslate,
+    handleUnifiedTranslate,
     handleEditText,
     toggleSidebar,
     toggleTranslation,

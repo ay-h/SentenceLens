@@ -18,6 +18,7 @@ export default function TextEditor({ onClose }: TextEditorProps) {
   const [isCheckingChanges, setIsCheckingChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
   const [editResult, setEditResult] = useState<any>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -85,6 +86,13 @@ export default function TextEditor({ onClose }: TextEditorProps) {
       return;
     }
 
+    // Check if user is deleting all content
+    const trimmedText = editingText.trim();
+    if (trimmedText === '') {
+      setShowDeleteAllDialog(true);
+      return;
+    }
+
     setIsSaving(true);
     try {
       const result = await handleEditText(editingText);
@@ -111,6 +119,35 @@ export default function TextEditor({ onClose }: TextEditorProps) {
       console.error('Failed to save text:', error);
       toast.error(
         `保存失败：${error instanceof Error ? error.message : '未知错误'}`
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleConfirmDeleteAll() {
+    if (!currentRecord?.id) return;
+
+    setIsSaving(true);
+    setShowDeleteAllDialog(false);
+    
+    try {
+      const result = await handleEditText('');
+
+      if (result) {
+        savedTextRef.current = '';
+        setEditResult(result);
+        setEditingText('');
+
+        toast.success('所有内容已删除');
+        
+        // Refresh record data
+        await fetchCurrentRecord();
+      }
+    } catch (error) {
+      console.error('Failed to delete all content:', error);
+      toast.error(
+        `删除失败：${error instanceof Error ? error.message : '未知错误'}`
       );
     } finally {
       setIsSaving(false);
@@ -266,6 +303,18 @@ export default function TextEditor({ onClose }: TextEditorProps) {
         cancelText="继续编辑"
         onConfirm={handleConfirmDiscard}
         onClose={handleCancelClose}
+      />
+
+      {/* Delete All Confirmation Dialog */}
+      <ConfirmDialog
+        open={showDeleteAllDialog}
+        title="删除所有内容"
+        message="确定要删除所有文本内容吗？此操作将同时删除相关的图片、翻译和分析内容，且无法恢复。"
+        confirmText="删除所有内容"
+        cancelText="取消"
+        onConfirm={handleConfirmDeleteAll}
+        onClose={() => setShowDeleteAllDialog(false)}
+        danger
       />
     </div>
   );

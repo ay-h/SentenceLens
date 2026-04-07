@@ -9,7 +9,7 @@
 本功能为 SentenceLens 添加了以下增强：
 
 1. **文本内容可编辑**: 用户可以自由编辑记录中的文本内容
-2. **智能重新翻译**: 只重新翻译有变化的句子，节省API调用
+2. **统一翻译按钮**: 自动检测变化并只翻译需要翻译的句子
 3. **OCR 图像预处理**: 自动校正歪斜、调整对比度、锐化和降噪
 4. **OCR 质量评估**: 评估识别结果并提示低质量识别
 
@@ -33,12 +33,18 @@
 
 #### 高级使用
 
-**智能重新翻译**:
+**统一翻译按钮**:
 
 1. 编辑并保存文本后，点击"翻译"按钮
-2. 系统只翻译被修改的句子
-3. 未修改的句子翻译保留
-4. 提示显示翻译进度和结果
+2. 系统自动检测哪些句子需要翻译
+3. 只翻译新增或修改的句子
+4. 如果无变化，显示"文本无变化，无需重新翻译"
+5. 提示显示翻译进度和结果
+
+**按钮行为**:
+- 有变化句子：翻译变化句子，跳过未修改句子
+- 无变化句子：显示友好提示，不执行翻译
+- 有未保存更改：提示先保存文本更改
 
 ### 2. OCR 预处理优化
 
@@ -129,23 +135,24 @@ curl -X POST http://127.0.0.1:8000/api/records/123/text/edit \
 }
 ```
 
-### 智能重新翻译
+### 统一翻译
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/records/123/translate/smart \
+curl -X POST http://127.0.0.1:8000/api/records/123/translate \
   -H "Content-Type: application/json" \
   -d '{
     "force_all": false
   }'
 ```
 
-**响应示例**:
+**响应示例（有变化时）**:
 ```json
 {
   "success": true,
   "data": {
     "translated_count": 1,
     "skipped_count": 2,
+    "no_changes_detected": false,
     "translations": [
       {
         "sentence_id": 456,
@@ -156,6 +163,20 @@ curl -X POST http://127.0.0.1:8000/api/records/123/translate/smart \
     ]
   },
   "message": "已翻译1个句子，跳过2个未修改的句子"
+}
+```
+
+**响应示例（无变化时）**:
+```json
+{
+  "success": true,
+  "data": {
+    "translated_count": 0,
+    "skipped_count": 3,
+    "no_changes_detected": true,
+    "translations": []
+  },
+  "message": "文本无变化，无需重新翻译"
 }
 ```
 

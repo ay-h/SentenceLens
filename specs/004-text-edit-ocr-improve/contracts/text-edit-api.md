@@ -66,9 +66,9 @@
 }
 ```
 
-### POST /api/records/:id/translate/smart
+### POST /api/records/:id/translate
 
-**描述**: 只重新翻译被修改的句子
+**描述**: 统一翻译端点，自动检测变化并只翻译需要翻译的句子
 
 **请求**:
 ```json
@@ -78,7 +78,7 @@
 ```
 
 **字段说明**:
-- `force_all` (boolean, optional): 是否强制翻译所有句子（默认: false）
+- `force_all` (boolean, optional): 是否强制翻译所有句子（默认: false，只翻译变化的句子）
 
 **响应**:
 ```json
@@ -87,6 +87,7 @@
   "data": {
     "translated_count": 1,
     "skipped_count": 1,
+    "no_changes_detected": false,
     "translations": [
       {
         "sentence_id": 456,
@@ -97,6 +98,20 @@
     ]
   },
   "message": "已翻译1个句子，跳过1个未修改的句子"
+}
+```
+
+**无变化时的响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "translated_count": 0,
+    "skipped_count": 3,
+    "no_changes_detected": true,
+    "translations": []
+  },
+  "message": "文本无变化，无需重新翻译"
 }
 ```
 
@@ -273,7 +288,7 @@
 | 端点 | 最大响应时间 |
 |------|------------|
 | POST /api/records/:id/text/edit | 500ms |
-| POST /api/records/:id/translate/smart | 取决于LLM API |
+| POST /api/records/:id/translate | 取决于LLM API |
 | GET /api/records/:id/quality | 200ms |
 | POST /api/upload | 15s（含预处理）|
 

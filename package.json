@@ -12,7 +12,10 @@
     "build": "npm run build-frontend && electron-builder",
     "build-win": "npm run build-frontend && electron-builder --win",
     "build-mac": "npm run build-frontend && electron-builder --mac",
-    "build-linux": "npm run build-frontend && electron-builder --linux"
+    "build-linux": "npm run build-frontend && electron-builder --linux",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "build": {
     "appId": "com.ay-a.SentenceLens",
@@ -73,6 +76,8 @@
   },
   "devDependencies": {
     "electron": "^41.1.1",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "jest": "^30.3.0",
+    "supertest": "^7.2.2"
   }
 }

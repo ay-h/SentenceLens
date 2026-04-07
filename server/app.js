@@ -24,6 +24,8 @@ const TextEditService = require('./services/textEdit');
 const textEditService = new TextEditService(db);
 const ImageProcessor = require('./services/imageProcessor');
 const imageProcessor = new ImageProcessor();
+const TranslationService = require('./services/translation');
+const translationService = new TranslationService(db, llmService);
 
 const app = express();
 const PORT = 8000;
@@ -261,117 +263,41 @@ app.get('/api/records/:id/unsaved-changes', async (req, res) => {
 });
 
 /**
- * Smart translation - only translate changed sentences
+ * Unified translation - automatically detects changes and translates only needed sentences
  */
-app.post('/api/records/:id/translate/smart', async (req, res) => {
+app.post('/api/records/:id/translate', async (req, res) => {
   try {
     const recordId = parseInt(req.params.id);
-    const { changed_indices } = req.body; // Array of sentence indices that were modified
+    const { force_all = false } = req.body;
 
-    // Get LLM config
-    const config = db.getLatestLLMConfig();
-    if (!config) {
-      return res.status(400).json({ detail: '未配置LLM，请先在设置页面配置LLM' });
-    }
+    // Use translation service for unified translation logic
+    const result = await translationService.performUnifiedTranslation(recordId, force_all);
 
-    // Get record to get text
-    const record = db.getRecord(recordId);
-    if (!record) {
-      return res.status(404).json({ detail: '记录不存在' });
-    }
-
-    // Split and clean sentences
-    let sentences = splitSentences(record.ocr_text);
-    sentences = sentences.map(s => cleanSentence(s)).filter(s => s);
-
-    if (sentences.length === 0) {
-      return res.status(400).json({ detail: '没有找到可翻译的句子' });
-    }
-
-    // Determine which sentences to translate
-    let sentencesToTranslate = [];
-    let indicesToTranslate = [];
-
-    if (changed_indices && Array.isArray(changed_indices) && changed_indices.length > 0) {
-      // Only translate specified indices
-      for (const index of changed_indices) {
-        if (index >= 0 && index < sentences.length) {
-          sentencesToTranslate.push(sentences[index]);
-          indicesToTranslate.push(index);
-        }
+    // Return appropriate status code based on result
+    if (!result.success) {
+      if (result.code === 'UNSAVED_CHANGES') {
+        return res.status(400).json(result);
+      } else if (result.error && result.error.includes('未配置LLM')) {
+        return res.status(400).json(result);
+      } else if (result.error && result.error.includes('不存在')) {
+        return res.status(404).json(result);
+      } else {
+        return res.status(500).json(result);
       }
-      console.log(`智能翻译：${indicesToTranslate.length} 个句子（索引: ${indicesToTranslate.join(', ')}）`);
-    } else {
-      // Translate all sentences (same as normal translation)
-      sentencesToTranslate = sentences;
-      indicesToTranslate = sentences.map((_, i) => i);
-      console.log(`智能翻译：所有 ${sentences.length} 个句子`);
     }
 
-    // Translate selected sentences
-    const translationResults = await llmService.translateSentencesBatch(
-      sentencesToTranslate, recordId, config.url, config.api_key, config.model, db
-    );
+    res.json(result);
 
-    // Map results back to original indices
-    const mappedResults = translationResults.map((result, i) => ({
-      ...result,
-      original_index: indicesToTranslate[i]
-    }));
-
-    // Check failures
-    const failedCount = translationResults.filter(r => r.error).length;
-    if (failedCount > 0) {
-      console.log(`⚠️  ${failedCount} sentences failed to translate`);
-    }
-
-    // Combine with existing translations if we only translated some
-    let allTranslations;
-    if (changed_indices && changed_indices.length > 0) {
-      // Get existing translations
-      const existingTranslations = db.getTranslationsByRecord(recordId);
-      const existingMap = new Map(existingTranslations.map(t => [t.sentence_index, t]));
-
-      // Merge
-      allTranslations = [...existingTranslations];
-      for (const result of mappedResults) {
-        if (!result.error) {
-          // Remove any existing translation at this index
-          allTranslations = allTranslations.filter(t => t.sentence_index !== result.original_index);
-          // Add new one
-          allTranslations.push({
-            record_id: recordId,
-            original_sentence: result.original_sentence,
-            translated_sentence: result.translated_sentence,
-            sentence_index: result.original_index
-          });
-        }
-      }
-    } else {
-      // We translated everything
-      allTranslations = translationResults
-        .filter(r => !r.error)
-        .map(r => ({
-          record_id: recordId,
-          original_sentence: r.original_sentence,
-          translated_sentence: r.translated_sentence,
-          sentence_index: r.original_index
-        }));
-    }
-
-    res.json({
-      record_id: recordId,
-      translations: allTranslations,
-      translated_count: mappedResults.filter(r => !r.error).length,
-      failed_count: failedCount
-    });
   } catch (error) {
-    console.error('Smart translation failed:', error);
-    res.status(500).json({ detail: `智能翻译失败: ${error.message}` });
+    console.error('统一翻译错误:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || '翻译过程中发生错误'
+    });
   }
 });
 
-/**
+    /**
  * Get record OCR quality assessment
  */
 app.get('/api/records/:id/quality', (req, res) => {

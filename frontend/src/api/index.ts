@@ -169,6 +169,32 @@ export async function deleteAnalysis(
 
 // ==================== Translation ====================
 
+export async function unifiedTranslate(
+  recordId: number,
+  forceAll = false,
+): Promise<{
+  success: boolean;
+  data?: {
+    translated_count: number;
+    skipped_count: number;
+    no_changes_detected: boolean;
+    translations: Array<{
+      sentence_id: number;
+      sentence_text: string;
+      translation: string;
+      translation_time_ms: number;
+    }>;
+  };
+  message: string;
+  error?: string;
+}> {
+  return request(`/api/records/${recordId}/translate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force_all: forceAll }),
+  });
+}
+
 export async function translateText(
   text: string,
   recordId: number,
@@ -177,22 +203,6 @@ export async function translateText(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, record_id: recordId }),
-  });
-}
-
-export async function smartTranslate(
-  recordId: number,
-  changedIndices?: number[],
-): Promise<{
-  record_id: number;
-  translations: Translation[];
-  translated_count: number;
-  failed_count: number;
-}> {
-  return request(`/api/records/${recordId}/translate/smart`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ changed_indices: changedIndices }),
   });
 }
 
