@@ -17,7 +17,6 @@
 **Language/Version**: Node.js 18.x, Electron 41.x, React 18.x + TypeScript
 **Primary Dependencies**:
 
-- `@techstark/opencv-js` v4.12.0 - 图像预处理（已集成）
 - `tesseract.js` v7.0.0 - OCR识别（已集成）
 - `sql.js` v1.12.0 - SQLite WASM客户端存储
 - `express` v4.21.0 - 后端API服务
