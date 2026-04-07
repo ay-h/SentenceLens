@@ -1,0 +1,194 @@
+/* Sentence Editor Component Styles */
+.sentence-editor {
+  margin: 8px 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  transition: all 0.2s ease;
+}
+
+.sentence-editor:hover {
+  border-color: var(--color-border-hover);
+  background: var(--color-surface-hover);
+}
+
+.sentence-editor.modified {
+  background: rgba(59, 130, 246, 0.05);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.sentence-editor.editing {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+/* Display Mode */
+.sentence-display-container {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sentence-text {
+  flex: 1;
+  line-height: 1.6;
+  color: var(--color-text);
+  font-size: 14px;
+  word-wrap: break-word;
+  min-height: 20px;
+}
+
+.sentence-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.sentence-editor:hover .sentence-actions {
+  opacity: 1;
+}
+
+.sentence-action-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sentence-action-button.edit {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+.sentence-action-button.edit:hover {
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  border-color: var(--color-primary);
+}
+
+.sentence-action-button.analyze {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+.sentence-action-button.analyze:hover {
+  background: var(--color-secondary);
+  color: var(--color-secondary-foreground);
+  border-color: var(--color-secondary);
+}
+
+.analyze-icon {
+  font-weight: bold;
+  font-style: italic;
+}
+
+/* Edit Mode */
+.sentence-edit-container {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.sentence-textarea {
+  flex: 1;
+  min-height: 32px;
+  max-height: 120px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 1.5;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.sentence-textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.sentence-edit-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sentence-action-button.save {
+  background: var(--color-success);
+  color: var(--color-success-foreground);
+}
+
+.sentence-action-button.save:hover {
+  background: var(--color-success-hover);
+}
+
+.sentence-action-button.cancel {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+.sentence-action-button.cancel:hover {
+  background: var(--color-destructive);
+  color: var(--color-destructive-foreground);
+  border-color: var(--color-destructive);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .sentence-editor {
+    margin: 6px 0;
+    padding: 10px;
+  }
+  
+  .sentence-text {
+    font-size: 13px;
+  }
+  
+  .sentence-action-button {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .sentence-display-container {
+    gap: 8px;
+  }
+}
+
+/* Focus Management */
+.sentence-editor:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+/* Animation for modified state */
+.sentence-editor.modified {
+  animation: highlightModified 0.5s ease;
+}
+
+@keyframes highlightModified {
+  0% {
+    background: rgba(59, 130, 246, 0.2);
+  }
+  100% {
+    background: rgba(59, 130, 246, 0.05);
+  }
+}

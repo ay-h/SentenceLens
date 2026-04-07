@@ -96,7 +96,7 @@ export default function TextActions() {
           disabled={translating || loading}
           className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border transition-colors disabled:opacity-50 ${
             isEditingText
-              ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-foreground)]'
+              ? 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-gray-50'
               : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-gray-50'
           }`}
         >
@@ -107,7 +107,7 @@ export default function TextActions() {
         <button
           onClick={onUnifiedTranslate}
           disabled={translating || loading}
-          className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-[var(--color-primary)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] transition-colors disabled:opacity-50"
+          className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-gray-50 transition-colors disabled:opacity-50"
         >
           {translating ? <Loader2 size={12} className="animate-spin" /> : <Languages size={12} />}
           翻译

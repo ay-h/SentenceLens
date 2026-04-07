@@ -1,5 +1,6 @@
 import { getUnsavedChanges } from '@/api';
 import { ConfirmDialog } from '@/components/Dialog';
+import SentenceList from '@/components/TextEditor/SentenceList';
 import { useApp } from '@/store/AppContext';
 import { Check, Loader2, Save, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -20,9 +21,40 @@ export default function TextEditor({ onClose }: TextEditorProps) {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
   const [editResult, setEditResult] = useState<any>(null);
+  const [modifiedSentences, setModifiedSentences] = useState<Set<number>>(new Set());
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const savedTextRef = useRef('');
+
+  // Split text into sentences for sentence-level editing
+  const splitIntoSentences = (text: string): string[] => {
+    return text
+      .split(/([.!?]+)\s*/)
+      .filter((part, index, arr) => {
+        // Keep non-empty parts and punctuation that follows text
+        return part.trim() !== '' || (index > 0 && index % 2 === 1);
+      })
+      .reduce((acc: string[], part, index) => {
+        // Combine punctuation with preceding text
+        if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
+          const lastText = acc.pop() || '';
+          acc.push(lastText + part);
+        } else if (part.trim()) {
+          acc.push(part);
+        }
+        return acc;
+      }, [])
+      .filter(sentence => sentence.trim().length > 0);
+  };
+
+  // Join sentences back into text
+  const joinSentences = (sentences: string[]): string => {
+    return sentences.join(' ').replace(/\s{2,}/g, ' ').trim();
+  };
+
+  // Get current sentences
+  const getCurrentSentences = (): string[] => {
+    return splitIntoSentences(editingText);
+  };
 
   // Initialize with current record text
   useEffect(() => {
@@ -32,6 +64,7 @@ export default function TextEditor({ onClose }: TextEditorProps) {
       setOriginalText(text);
       savedTextRef.current = text;
       setHasChanges(false);
+      setModifiedSentences(new Set());
     }
   }, [currentRecord?.id, currentRecord?.ocr_text]);
 
@@ -74,8 +107,29 @@ export default function TextEditor({ onClose }: TextEditorProps) {
     return editingText !== savedTextRef.current;
   }
 
-  function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setEditingText(e.target.value);
+  function handleTextChange(newText: string) {
+    setEditingText(newText);
+  }
+
+  function handleSentenceEdit(index: number, newText: string) {
+    const sentences = getCurrentSentences();
+    const updatedSentences = [...sentences];
+    updatedSentences[index] = newText;
+    
+    const newFullText = joinSentences(updatedSentences);
+    handleTextChange(newFullText);
+    
+    // Track modified sentences
+    const originalSentences = splitIntoSentences(originalText);
+    const newModifiedSentences = new Set<number>();
+    
+    updatedSentences.forEach((sentence, idx) => {
+      if (sentence.trim() !== (originalSentences[idx] || '').trim()) {
+        newModifiedSentences.add(idx);
+      }
+    });
+    
+    setModifiedSentences(newModifiedSentences);
   }
 
   async function handleSave() {
@@ -100,6 +154,8 @@ export default function TextEditor({ onClose }: TextEditorProps) {
       if (result) {
         savedTextRef.current = editingText;
         setEditResult(result);
+        setOriginalText(editingText);
+        setModifiedSentences(new Set());
 
         // Show success message with details
         if (result.summary.hasChanges) {
@@ -138,6 +194,8 @@ export default function TextEditor({ onClose }: TextEditorProps) {
         savedTextRef.current = '';
         setEditResult(result);
         setEditingText('');
+        setOriginalText('');
+        setModifiedSentences(new Set());
 
         toast.success('所有内容已删除');
         
@@ -156,6 +214,7 @@ export default function TextEditor({ onClose }: TextEditorProps) {
 
   function handleReset() {
     setEditingText(originalText);
+    setModifiedSentences(new Set());
     toast.info('已重置为原始文本');
   }
 
@@ -178,6 +237,8 @@ export default function TextEditor({ onClose }: TextEditorProps) {
 
   if (!currentRecord) return null;
 
+  const sentences = getCurrentSentences();
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -187,7 +248,7 @@ export default function TextEditor({ onClose }: TextEditorProps) {
             编辑文本
           </h2>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
-            {currentRecord.name}
+            {currentRecord.name} • {sentences.length} 个句子
           </p>
         </div>
 
@@ -229,16 +290,12 @@ export default function TextEditor({ onClose }: TextEditorProps) {
         </div>
       </div>
 
-      {/* Edit Area */}
+      {/* Sentence List Editor */}
       <div className="flex-1 overflow-hidden p-4">
-        <textarea
-          ref={textareaRef}
-          value={editingText}
-          onChange={handleTextChange}
-          disabled={isSaving}
-          className="w-full h-full p-4 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] font-mono text-base leading-relaxed"
-          placeholder="编辑识别出的文本..."
-          spellCheck={false}
+        <SentenceList
+          sentences={sentences}
+          modifiedSentences={modifiedSentences}
+          onEdit={handleSentenceEdit}
         />
       </div>
 
@@ -248,7 +305,7 @@ export default function TextEditor({ onClose }: TextEditorProps) {
           {hasUnsavedUserChanges() && (
             <span className="flex items-center gap-1.5 text-[var(--color-warning)]">
               <span className="w-2 h-2 rounded-full bg-[var(--color-warning)]" />
-              有未保存的更改
+              有未保存的更改 ({modifiedSentences.size} 个句子已修改)
             </span>
           )}
           {!hasUnsavedUserChanges() && (
@@ -260,7 +317,7 @@ export default function TextEditor({ onClose }: TextEditorProps) {
         </div>
 
         <div className="text-sm text-[var(--color-text-muted)]">
-          {editingText.length} 字符
+          {editingText.length} 字符 • {sentences.length} 个句子
         </div>
       </div>
 

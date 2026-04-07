@@ -7,7 +7,7 @@
 
 ## Summary
 
-本功能为SentenceLens添加文本编辑能力和OCR识别优化。主要包含：1) 文本内容可编辑功能，支持修改OCR识别错误并智能清除相关翻译；2) 统一翻译按钮，自动检测变化只翻译需要翻译的句子；3) OCR图像预处理优化，提高拍照文档的识别准确率；4) OCR结果质量评估和提示。技术方案基于Electron + React架构，使用tesseract.js进行OCR处理，SQLite存储数据。
+本功能为SentenceLens添加文本编辑能力和OCR识别优化。主要包含：1) 文本内容可编辑功能，支持修改OCR识别错误并智能清除相关翻译；2) 统一翻译按钮，自动检测变化只翻译需要翻译的句子；3) OCR图像预处理优化，提高拍照文档的识别准确率；4) OCR结果质量评估和提示；5) 文本编辑界面布局优化，采用句子级独立编辑模式解决排版问题。技术方案基于Electron + React架构，使用tesseract.js进行OCR处理，SQLite存储数据。
 
 ## Technical Context
 
@@ -78,6 +78,9 @@ frontend/               # 前端源码
 ├── src/
 │   ├── components/    # React 组件
 │   │   ├── TextEditor/ # 文本编辑组件
+│   │   │   ├── SentenceEditor.jsx  # 句子级独立编辑组件
+│   │   │   ├── SentenceList.jsx    # 句子列表容器
+│   │   │   └── EditButton.jsx      # 编辑按钮组件
 │   │   ├── TranslationButton/ # 统一翻译按钮
 │   │   └── OCRProcessor/ # OCR 处理组件
 │   ├── pages/          # 页面组件

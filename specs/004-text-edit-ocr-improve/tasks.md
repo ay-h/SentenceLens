@@ -174,18 +174,49 @@
 
 ---
 
-## Phase 7: Polish & 跨切关注点
+## Phase 7: User Story 5 - 文本编辑界面布局优化 (Priority: P1)
+
+**目标**: 优化文本编辑界面的排版显示，采用句子级独立编辑模式解决阅读和定位问题
+
+**独立测试**: 用户进入编辑模式，每个句子独立显示，修改的句子高亮显示，编辑按钮与分析按钮并列显示
+
+### Tests for User Story 5 (REQUIRED) ⚠️
+
+> **注意：先写这些测试，确保失败后再实现**
+
+- [ ] T069 [P] [US5] 单元测试：句子级独立编辑组件渲染 tests/unit/sentenceEditor.test.js
+- [ ] T070 [P] [US5] 单元测试：修改句子高亮显示逻辑 tests/unit/sentenceEditor.test.js
+- [ ] T071 [P] [US5] 单元测试：编辑按钮与分析按钮集成 tests/unit/sentenceEditor.test.js
+- [ ] T072 [P] [US5] 集成测试：文本编辑布局优化完整流程 tests/integration/sentenceEditor.test.js
+
+### Implementation for User Story 5
+
+- [ ] T073 [P] [US5] 创建句子级独立编辑组件 frontend/src/components/TextEditor/SentenceEditor.jsx
+- [ ] T074 [P] [US5] 创建句子列表容器组件 frontend/src/components/TextEditor/SentenceList.jsx
+- [ ] T075 [P] [US5] 创建编辑按钮组件 frontend/src/components/TextEditor/EditButton.jsx
+- [ ] T076 [US5] 实现修改句子高亮显示逻辑 frontend/src/components/TextEditor/SentenceEditor.jsx
+- [ ] T077 [US5] 实现8-12px间距和无分隔线布局 frontend/src/components/TextEditor/SentenceList.jsx
+- [ ] T078 [US5] 集成编辑按钮与分析按钮并列显示 frontend/src/components/TextEditor/EditButton.jsx
+- [ ] T079 [US5] 修改现有文本编辑组件使用新布局 frontend/src/components/TextEditor.tsx
+- [ ] T080 [US5] 添加响应式布局支持 frontend/src/components/TextEditor/SentenceList.jsx
+- [ ] T081 [US5] 更新CSS样式支持句子级布局 frontend/src/components/TextEditor/SentenceEditor.css
+
+**检查点**: 此时，User Story 5 应该完全功能并可独立测试
+
+---
+
+## Phase 8: Polish & 跨切关注点
 
 **目的**: 影响多个用户故事的改进
 
-- [ ] T061 [P] 文档更新：更新 README.md 和 CLAUDE.md
-- [ ] T062 [P] 代码清理和重构
-- [ ] T063 [P] 性能优化：预处理结果缓存
-- [ ] T064 [P] 性能优化：批量数据库更新
-- [ ] T065 [P] 安全加固：输入验证和清理
-- [ ] T066 运行 quickstart.md 验证
-- [ ] T067 [P] 更新 electron-builder 配置确保正确打包
-- [ ] T068 [P] 集成测试覆盖率报告
+- [ ] T082 [P] 文档更新：更新 README.md 和 CLAUDE.md
+- [ ] T083 [P] 代码清理和重构
+- [ ] T084 [P] 性能优化：预处理结果缓存
+- [ ] T085 [P] 性能优化：批量数据库更新
+- [ ] T086 [P] 安全加固：输入验证和清理
+- [ ] T087 运行 quickstart.md 验证
+- [ ] T088 [P] 更新 electron-builder 配置确保正确打包
+- [ ] T089 [P] 集成测试覆盖率报告
 
 ---
 
@@ -206,6 +237,7 @@
 - **User Story 2 (P1)**: 可以在 Foundational (Phase 2) 后开始 - 可能与 US1 集成，但应独立测试
 - **User Story 3 (P2)**: 可以在 Foundational (Phase 2) 后开始 - 与 US1/US2 集成但应独立测试
 - **User Story 4 (P2)**: 可以在 Foundational (Phase 2) 后开始 - 可以独立工作或与 US3 集成
+- **User Story 5 (P1)**: 可以在 Foundational (Phase 2) 后开始 - 依赖 US1 的文本编辑基础功能
 
 ### Within Each User Story
 
@@ -239,6 +271,22 @@ Task: "实现句子变更检测算法"
 Task: "实现句子翻译和分析清除逻辑"
 ```
 
+### Parallel Example: User Story 5
+
+```bash
+# 一起启动 User Story 5 的所有测试：
+Task: "单元测试：句子级独立编辑组件渲染"
+Task: "单元测试：修改句子高亮显示逻辑"
+Task: "单元测试：编辑按钮与分析按钮集成"
+Task: "集成测试：文本编辑布局优化完整流程"
+
+# 一起启动 User Story 5 的所有组件：
+Task: "创建句子级独立编辑组件"
+Task: "创建句子列表容器组件"
+Task: "创建编辑按钮组件"
+Task: "更新CSS样式支持句子级布局"
+```
+
 ---
 
 ## Implementation Strategy
@@ -256,9 +304,10 @@ Task: "实现句子翻译和分析清除逻辑"
 1. 完成 Setup + Foundational → 基础设施就绪
 2. 添加 User Story 1 → 独立测试 → 部署/演示 (MVP!)
 3. 添加 User Story 2 → 独立测试 → 部署/演示
-4. 添加 User Story 3 → 独立测试 → 部署/演示
-5. 添加 User Story 4 → 独立测试 → 部署/演示
-6. 每个故事添加值而不破坏之前的故事
+4. 添加 User Story 5 → 独立测试 → 部署/演示 (布局优化)
+5. 添加 User Story 3 → 独立测试 → 部署/演示
+6. 添加 User Story 4 → 独立测试 → 部署/演示
+7. 每个故事添加值而不打破之前的故事
 
 ### Parallel Team Strategy
 
@@ -268,7 +317,8 @@ Task: "实现句子翻译和分析清除逻辑"
 2. 一旦 Foundational 完成：
    - 开发人员 A: User Story 1
    - 开发人员 B: User Story 2
-   - 开发人员 C: User Story 3 + 4 (可能）
+   - 开发人员 C: User Story 5 (布局优化)
+   - 开发人员 D: User Story 3 + 4 (可能）
 3. 故事独立完成并集成
 
 ---
