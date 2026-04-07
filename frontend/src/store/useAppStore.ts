@@ -133,7 +133,7 @@ export function useAppStore() {
     await loadSessions();
   }, [loadSessions]);
 
-  // Upload image
+  // Upload image - OCR preprocessing is automatically applied on server
   const handleUploadImage = useCallback(async (file: File) => {
     setLoading(true);
     try {

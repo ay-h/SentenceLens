@@ -1,398 +1,184 @@
 /**
- * Image Processing Service
- *
+ * 图像预处理服务 - 基于 Sharp (纯 Node.js，无需编译)
+ * 
  * 功能：
- * - 歪斜校正（投影法）
- * - 对比度调整（CLAHE）
- * - 锐化（Unsharp Mask）
- * - 降噪（双边滤波）
- * - OCR 质量评估（置信度分析）
+ * - 自动旋转检测（0°, 90°, 180°, 270°）
+ * - 图像增强（对比度、亮度）
+ * - 转换为灰度图
+ * - 调整大小
  */
 
-const cv = require("@techstark/opencv-js");
-const path = require("path");
-const fs = require("fs");
+const sharp = require('sharp');
+const path = require('path');
+const fs = require('fs');
+const { createWorker } = require('tesseract.js');
 
 /**
- * 预处理配置（默认值）
+ * 自动旋转检测 - 尝试4个方向，返回OCR置信度最高的
+ * @param {string} inputPath - 输入图像路径
+ * @returns {Promise<{outputPath: string, angle: number, confidence: number}>}
  */
-const DEFAULT_CONFIG = {
-  // 歪斜校正
-  deskewEnabled: true,
-  deskewMinLineLength: 50,
-  deskewAngleThreshold: 0.5,
-
-  // 对比度调整
-  contrastEnabled: true,
-  claheClipLimit: 2.0,
-  claheTileGridSize: 8,
-
-  // 锐化
-  sharpenEnabled: true,
-  sharpenStrength: 1.5,
-  sharpenRadius: 1,
-
-  // 降噪
-  denoiseEnabled: true,
-  bilateralDiameter: 9,
-  bilateralSigmaColor: 75,
-  bilateralSigmaSpace: 75,
-
-  // 质量评估
-  qualityThreshold: 60.0,
-  lowConfidenceThreshold: 50.0
-};
-
-class ImageProcessor {
-  constructor(config = {}) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
+async function autoRotate(inputPath, outputDir = './data/preprocessed') {
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  /**
-   * 配置预处理器
-   */
-  configure(config) {
-    this.config = { ...this.config, ...config };
-  }
+  const angles = [0, 90, 180, 270];
+  let bestResult = { angle: 0, confidence: 0, buffer: null };
 
-  /**
-   * 读取图像文件
-   */
-  async loadImage(imagePath) {
+  // 读取原始图像
+  const originalBuffer = fs.readFileSync(inputPath);
+
+  // 在每个角度尝试 OCR，找出置信度最高的
+  for (const angle of angles) {
     try {
-      const absolutePath = path.resolve(imagePath);
-      if (!fs.existsSync(absolutePath)) {
-        throw new Error(`图片文件文件不存在: ${imagePath}`);
+      // 旋转图像
+      const rotatedBuffer = await sharp(originalBuffer)
+        .rotate(angle, { background: { r: 255, g: 255, b: 255 } })
+        .jpeg({ quality: 90 })
+        .toBuffer();
+
+      // 临时保存用于 OCR
+      const tempPath = path.join(outputDir, `temp_${angle}.jpg`);
+      fs.writeFileSync(tempPath, rotatedBuffer);
+
+      // OCR 测试（使用快速模式）
+      const worker = await createWorker('eng', undefined, {
+        cachePath: path.join(__dirname, '../..'),
+        cacheMethod: 'readOnly',
+        gzip: false,
+      });
+
+      const result = await worker.recognize(tempPath);
+      await worker.terminate();
+
+      // 清理临时文件
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
       }
 
-      const image = await cv.imreadAsync(absolutePath);
-      return image;
-    } catch (error) {
-      throw new Error(`读取图片失败: ${error.message}`);
-    }
-  }
+      const confidence = result.data.confidence || 0;
+      const text = result.data.text?.trim() || '';
 
-  /**
-   * 保存图像文件
-   */
-  async saveImage(image, outputPath) {
-    try {
-      const dir = path.dirname(outputPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+      console.log(`[AutoRotate] Angle ${angle}°: confidence=${confidence.toFixed(1)}, textLength=${text.length}`);
+
+      // 选择置信度最高且识别出文本的方向
+      if (confidence > bestResult.confidence && text.length > 0) {
+        bestResult = { angle, confidence, buffer: rotatedBuffer };
       }
 
-      await cv.imwriteAsync(outputPath, image);
-      return outputPath;
     } catch (error) {
-      throw new Error(`保存图片失败: ${error.message}`);
+      console.warn(`[AutoRotate] Failed at angle ${angle}°:`, error.message);
     }
   }
 
-  /**
-   * 歪斜校正（投影法）
-   *
-   * 算法说明：
-   * 1. 将图像转换为灰度图
-   * 2. 计算不同旋转角度下的水平投影（黑色像素数量）
-   * 3. 选择具有最大投影峰值的旋转角度
-   * 4. 旋转图像使其水平
-   */
-  async deskewImage(image) {
-    if (!this.config.deskewEnabled) {
-      console.log("歪斜校正已禁用");
-      return { processed: image, angle: 0, applied: false };
-    }
+  // 保存最佳结果
+  const outputFileName = `preprocessed_${Date.now()}.jpg`;
+  const outputPath = path.join(outputDir, outputFileName);
 
-    try {
-      console.log("开始歪斜校正...");
-      const startTime = Date.now();
-
-      // 转换为灰度图
-      const gray = image.cvtColor(cv.COLOR_BGR2GRAY);
-
-      // 尝试不同角度，找到最佳旋转角度
-      const angles = [-2.0, -1.5, -1.0, -0.5, 0, 0.5, 1.0, 1.5, 2.0];
-      let bestAngle = 0;
-      let bestProjection = 0;
-
-      for (const angle of angles) {
-        const rotated = gray.rotate(angle, gray.cols / 2, gray.rows / 2, cv.INTER_LINEAR, cv.BORDER_CONSTANT, 0);
-        const projection = cv.sum(rotated, 0);
-
-        // 寻找投影的峰值（黑色像素最多）
-        const maxVal = Math.max(...projection);
-        if (maxVal > bestProjection) {
-          bestProjection = maxVal;
-          bestAngle = angle;
-        }
-      }
-
-      // 如果最佳角度超过阈值，进行旋转
-      const processingTime = Date.now() - startTime;
-      console.log(`歪斜校正完成，角度: ${bestAngle}°，用时: ${processingTime}ms`);
-
-      if (Math.abs(bestAngle) > this.config.deskewAngleThreshold) {
-        const rotated = image.rotate(bestAngle, image.cols / 2, image.rows / 2, cv.INTER_LINEAR, cv.BORDER_CONSTANT, 0);
-        return { processed: rotated, angle: bestAngle, applied: true };
-      }
-
-      return { processed: image, angle: 0, applied: false };
-    } catch (error) {
-      console.error("歪斜校正失败:", error);
-      return { processed: image, angle: 0, applied: false };
-    }
+  if (bestResult.buffer) {
+    fs.writeFileSync(outputPath, bestResult.buffer);
+    console.log(`[AutoRotate] Best angle: ${bestResult.angle}° (confidence: ${bestResult.confidence.toFixed(1)})`);
+  } else {
+    // 如果没有找到好的方向，使用原图
+    fs.copyFileSync(inputPath, outputPath);
+    console.log(`[AutoRotate] No good rotation found, using original`);
   }
 
-  /**
-   * 对比度调整（CLAHE - 限制对比度自适应直方图均衡化）
-   *
-   * CLAHE 需要 LAB 或 YUV 色色空间
-   */
-  async enhanceContrast(image) {
-    if (!this.config.contrastEnabled) {
-      console.log("对比度调整已禁用");
-      return { processed: image, applied: false };
-    }
+  return {
+    outputPath,
+    angle: bestResult.angle,
+    confidence: bestResult.confidence,
+  };
+}
 
-    try {
-      console.log("开始对比度调整（CLAHE）...");
-      const startTime = Date.now();
+/**
+ * 图像增强 - 调整对比度和亮度
+ * @param {string} inputPath - 输入图像路径
+ * @param {string} outputPath - 输出图像路径
+ * @param {Object} options - 增强选项
+ */
+async function enhanceImage(inputPath, outputPath, options = {}) {
+  const { brightness = 1, contrast = 1, grayscale = true } = options;
 
-      // CLAHE 需要 LAB 或 YUV 色色空间
-      const lab = image.cvtColor(cv.COLOR_BGR2Lab);
+  let pipeline = sharp(inputPath);
 
-      // 分离 L 通道（亮度）
-      const lChannel = new cv.Mat();
-      cv.extractChannel(lab, lChannel, 0);
-
-      // 创建 CLAHE 对象
-      const clahe = new cv.CLAHE(
-        this.config.claheTileGridSize,
-        this.config.claheTileGridSize
-      );
-
-      // 应用 CLAHE 到 L 通道
-      clahe.apply(lChannel, lChannel);
-
-      // 合并通道回 LAB 空间
-      cv.mergeChannels([lChannel, lab.at(1), lab.at(2)], lab);
-
-      // 转换回 BGR 空间
-      const processed = lab.cvtColor(cv.COLOR_Lab2BGR);
-
-      // 应用裁剪限制防止过度增强
-      processed.convertTo(processed, -1, 0, this.config.claheClipLimit, cv.CV_8U);
-
-      const processingTime = Date.now() - startTime;
-      console.log(`对比度调整完成，用时: ${processingTime}ms`);
-
-      return { processed, applied: true };
-    } catch (error) {
-      console.error("对比度调整失败:", error);
-      return { processed: image, applied: false };
-    }
+  if (grayscale) {
+    pipeline = pipeline.grayscale();
   }
 
-  /**
-   * 锐化（Unsharp Mask 算法）
-   *
-   * 算法：从原图减去模糊版本，增强边缘
-   */
-  async sharpenImage(image) {
-    if (!this.config.sharpenEnabled) {
-      console.log("锐化已禁用");
-      return { processed: image, applied: false };
-    }
-
-    try {
-      console.log("开始锐化...");
-      const startTime = Date.now();
-
-      // 创建高斯模糊版本
-      const blurred = image.gaussianBlur(
-        this.config.sharpenRadius,
-        this.config.sharpenRadius,
-        0,
-        cv.BORDER_DEFAULT
-      );
-
-      // 计算 Unsharp Mask: 原图减去模糊版本
-      const unsharpMask = image.sub(blurred);
-
-      // 应用锐化强度
-      unsharpMask.convertTo(unsharpMask, -1, 0, this.config.sharpenStrength, cv.CV_8U);
-
-      // 将 Mask 加回模糊版本
-      const sharpened = blurred.add.add(unsharpMask);
-
-      const processingTime = Date.now() - startTime;
-      console.log(`锐化完成，用时: ${processingTime}ms`);
-
-      return { processed: sharpened, applied: true };
-    } catch (error) {
-      console.error("锐化失败:", error);
-      return { processed: image, applied: false };
-    }
+  if (brightness !== 1 || contrast !== 1) {
+    pipeline = pipeline.modulate({ brightness }).linear(contrast, -(contrast - 1) * 128);
   }
 
-  /**
-   * 降噪（双边滤波）
-   *
-   * 算法：保留边缘的同时平滑图像，适合 OCR 预处理
-   */
-  async denoiseImage(image) {
-    if (!this.config.denoiseEnabled) {
-      console.log("降噪已禁用");
-      return { processed: image, applied: false };
-    }
+  await pipeline.jpeg({ quality: 90 }).toFile(outputPath);
+}
 
-    try {
-      console.log("开始降噪（双边滤波）...");
-      const startTime = Date.now();
-
-      // 应用双边滤波到彩色图像
-      const denoised = image.bilateralFilter(
-        this.config.bilateralDiameter,
-        this.config.bilateralSigmaColor,
-        this.config.bilateralSigmaSpace
-      );
-
-      const processingTime = Date.now() - startTime;
-      console.log(`降噪完成，用时: ${processingTime}ms`);
-
-      return { processed: denoised, applied: true };
-    } catch (error) {
-      console.error("降噪失败:", error);
-      return { processed: image, applied: false };
-    }
+/**
+ * 简单图像预处理（不依赖 OpenCV）
+ * @param {string} inputPath - 输入图像路径
+ * @param {Object} config - 配置选项
+ * @returns {Promise<Object>} 处理结果
+ */
+async function preprocessImage(inputPath, config = {}) {
+  const outputDir = config.outputDir || './data/preprocessed';
+  
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  /**
-   * 完整预处理流水线
-   */
-  async preprocess(imagePath, options = {}) {
-    try {
-      console.log(`\n开始预处理图像: ${path.basename(imagePath)}`);
-      const startTime = Date.now();
+  const startTime = Date.now();
 
-      // 加载图像
-      const original = await this.loadImage(imagePath);
+  try {
+    // 1. 自动旋转检测（最重要的功能）
+    const rotationResult = await autoRotate(inputPath, outputDir);
 
-      // 应用歪斜校正
-      const { processed: deskewed, angle: deskewAngle } = await this.deskewImage(original);
+    // 2. 图像增强
+    const enhancedPath = rotationResult.outputPath.replace('.jpg', '_enhanced.jpg');
+    await enhanceImage(rotationResult.outputPath, enhancedPath, {
+      brightness: config.brightness || 1.1,
+      contrast: config.contrast || 1.2,
+      grayscale: config.grayscale !== false,
+    });
 
-      // 应用对比度调整
-      const { processed: contrastEnhanced } = await this.enhanceContrast(deskewed);
+    const totalTime = Date.now() - startTime;
 
-      // 应用锐化
-      const { processed: sharpened } = await this.sharpenImage(contrastEnhanced);
-
-      // 应用降噪
-      const { processed: denoised } = await this.denoiseImage(sharpened);
-
-      const processingTime = Date.now() - startTime;
-      console.log(`预处理完成，总用时: ${processingTime}ms\n`);
-
-      return {
-        original,
-        processed: denoised,
-        originalSize: {
-          width: original.cols,
-          height: original.rows
+    return {
+      processedPath: enhancedPath,
+      steps: [
+        {
+          name: 'autoRotate',
+          applied: true,
+          angle: rotationResult.angle,
+          confidence: rotationResult.confidence,
         },
-        processedSize: {
-          width: denoised.cols,
-          height: denoised.rows
+        {
+          name: 'enhance',
+          applied: true,
+          brightness: config.brightness || 1.1,
+          contrast: config.contrast || 1.2,
         },
-        steps: {
-          deskew: { applied: Math.abs(deskewAngle) > 0.5, angle: deskewAngle },
-          contrast: { applied: true },
-          sharpen: { applied: true },
-          denoise: { applied: true }
-        },
-        processingTime
-      };
-    } catch (error) {
-      console.error("预处理失败:", error);
-      throw error;
-    }
-  }
+      ],
+      totalProcessingTimeMs: totalTime,
+    };
 
-  /**
-   * 评估 OCR 识别质量
-   *
-   * 基于 tesseract.js 返回的置信度信息
-   */
-  assessQuality(ocrResult) {
-    if (!ocrResult || !ocrResult.words || !ocrResult.confidence) {
-      return {
-        overallConfidence: 0,
-        qualityLevel: 'unknown',
-        needsReview: false,
-        suspiciousWords: []
-      };
-    }
-
-    try {
-      console.log("评估 OCR 识别质量...");
-
-      // 计算整体置信度
-      const overallConfidence = ocrResult.confidence || 0;
-
-      // 判断质量级别
-      let qualityLevel;
-      let needsReview = false;
-
-      if (overallConfidence >= this.config.qualityThreshold + 20) {
-        qualityLevel = 'high';
-      } else if (overallConfidence >= this.config.qualityThreshold) {
-        qualityLevel = 'medium';
-        needsReview = true;
-      } else {
-        qualityLevel = 'low';
-        needsReview = true;
-      }
-
-      // 识别低置信度单词
-      const suspiciousWords = [];
-
-      if (ocrResult.words) {
-        ocrResult.words.forEach((word, index) => {
-          if (word.confidence < this.config.lowConfidenceThreshold) {
-            suspiciousWords.push({
-              word: word.text,
-              confidence: word.confidence,
-              bbox: word.bbox,
-              index: index
-            });
-          }
-        });
-      }
-
-      console.log(`质量评估完成 - 整体: ${overallConfidence.toFixed(1)}, 级别: ${qualityLevel}`);
-      console.log(`低置信度单词数量: ${suspiciousWords.length}`);
-
-      return {
-        overallConfidence,
-        qualityLevel,
-        needsReview,
-        suspiciousWords,
-        wordCount: ocrResult.words ? ocrResult.words.length : 0,
-        lowConfidenceWordCount: suspiciousWords.length
-      };
-    } catch (error) {
-      console.error("质量评估失败:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * 获取当前配置
-   */
-  getConfig() {
-    return { ...this.config };
+  } catch (error) {
+    console.error('[Preprocess] Failed:', error.message);
+    // 失败时返回原图
+    const outputFileName = `preprocessed_${Date.now()}_fallback.jpg`;
+    const outputPath = path.join(outputDir, outputFileName);
+    fs.copyFileSync(inputPath, outputPath);
+    
+    return {
+      processedPath: outputPath,
+      steps: [{ name: 'preprocess', applied: false, error: error.message }],
+      totalProcessingTimeMs: Date.now() - startTime,
+    };
   }
 }
 
-module.exports = ImageProcessor;
+module.exports = {
+  preprocessImage,
+  autoRotate,
+  enhanceImage,
+};

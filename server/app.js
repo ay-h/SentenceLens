@@ -22,8 +22,6 @@ const db = require('./models/database');
 // Initialize services
 const TextEditService = require('./services/textEdit');
 const textEditService = new TextEditService(db);
-const ImageProcessor = require('./services/imageProcessor');
-const imageProcessor = new ImageProcessor();
 const TranslationService = require('./services/translation');
 const translationService = new TranslationService(db, llmService);
 
@@ -351,7 +349,7 @@ app.delete('/api/records/:id', (req, res) => {
 
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
-    const { session_id, name } = req.body;
+    const { session_id, name, preprocess } = req.body;
 
     // Create session if not provided
     let sessionId = session_id ? parseInt(session_id) : null;
@@ -367,8 +365,18 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const filename = req.file.filename;
     const imagePath = `/uploads/${filename}`;
 
-    // Perform OCR
-    const ocrText = await ocrService.getOCRService().recognize(req.file.path);
+    // OCR preprocessing is enabled by default for all image uploads
+    // This provides better text recognition for photos, scanned documents, etc.
+    const enablePreprocess = true;
+    const userConfig = {};
+
+    // Perform OCR (with automatic preprocessing)
+    const ocrResult = await ocrService.getOCRService().recognize(req.file.path, {
+      preprocess: enablePreprocess,
+      preprocessConfig: userConfig,
+    });
+
+    const ocrText = ocrResult.text;
 
     // Split and clean sentences
     let sentences = splitSentences(ocrText);
@@ -380,14 +388,22 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const recordName = buildDefaultRecordName(name, originalName);
     const record = db.createRecord(sessionId, recordName, imagePath, ocrText);
 
-    res.json({
+    // Build response
+    const response = {
       record_id: record.id,
       session_id: sessionId,
       name: recordName,
       ocr_text: ocrText,
       sentences,
       image_path: imagePath,
-    });
+    };
+
+    // Add preprocessing info if applied
+    if (ocrResult.preprocessing && ocrResult.preprocessing.applied) {
+      response.preprocessing = ocrResult.preprocessing;
+    }
+
+    res.json(response);
   } catch (error) {
     console.error('Upload failed:', error);
 
@@ -435,6 +451,40 @@ app.post('/api/text', (req, res) => {
     });
   } catch (error) {
     console.error('Text processing failed:', error);
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+// ==================== Simple OCR Routes ====================
+
+/**
+ * POST /api/ocr/recognize
+ * Recognize text with optional preprocessing (auto-rotation using Sharp)
+ */
+app.post('/api/ocr/recognize', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ detail: 'No image file provided' });
+    }
+
+    const enablePreprocess = req.body.preprocess === 'true' || req.body.preprocess === true;
+
+    const ocr = ocrService.getOCRService();
+    await ocr.initialize();
+
+    const result = await ocr.recognize(req.file.path, {
+      preprocess: enablePreprocess,
+    });
+
+    res.json({
+      text: result.text,
+      confidence: result.confidence,
+      words: result.words,
+      preprocessing: result.preprocessing || { applied: false },
+    });
+
+  } catch (error) {
+    console.error('OCR recognize API error:', error);
     res.status(500).json({ detail: error.message });
   }
 });
