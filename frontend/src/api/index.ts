@@ -125,7 +125,12 @@ export async function uploadImage(
   name?: string,
 ): Promise<UploadResponse> {
   const formData = new FormData();
-  formData.append('file', file);
+  // Encode filename to handle Chinese characters properly
+  // Use encodeURIComponent to ensure Chinese characters are transmitted correctly
+  const encodedFilename = encodeURIComponent(file.name);
+  // Create a new File with encoded name
+  const renamedFile = new File([file], encodedFilename, { type: file.type });
+  formData.append('file', renamedFile);
   if (sessionId) formData.append('session_id', String(sessionId));
   if (name) formData.append('name', name);
   return request('/api/upload', { method: 'POST', body: formData });

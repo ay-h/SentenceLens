@@ -4,31 +4,34 @@
 
 `★ 技术栈 ─────────────────────────────`
 
-| 模块 | 技术选型 |
-|------|----------|
-| **前端** | React + Vite + TailwindCSS |
-| **后端** | Express.js (Node.js) |
-| **数据库** | SQLite via sql.js (纯 JS WASM) |
-| **OCR** | tesseract.js v7.0.0 (WASM) |
-| **LLM** | OpenAI SDK v4.x (Node.js) |
-| **依赖** | 仅 Node.js |
-| **安装大小** | ~100-150MB |
+| 模块         | 技术选型                       |
+| ------------ | ------------------------------ |
+| **前端**     | React + Vite + TailwindCSS     |
+| **后端**     | Express.js (Node.js)           |
+| **数据库**   | SQLite via sql.js (纯 JS WASM) |
+| **OCR**      | tesseract.js v7.0.0 (WASM)     |
+| **LLM**      | OpenAI SDK v4.x (Node.js)      |
+| **依赖**     | 仅 Node.js                     |
+| **安装大小** | ~100-150MB                     |
 
 `─────────────────────────────────────────────────`
 
 ## 快速开始
 
 ### 系统要求
+
 - **Node.js**: 18.x 或更高版本
 - **无需 Python**：完全 Node.js 实现
 
 ### 安装
+
 ```bash
-cd electron-desktop-app
+cd SentenceLens
 install.bat
 ```
 
 ### 运行
+
 ```bash
 npm start
 ```
@@ -36,7 +39,7 @@ npm start
 ## 项目结构
 
 ```
-electron-desktop-app/
+SentenceLens/
 ├── main.js                  # Electron 主进程
 ├── preload.js               # IPC 上下文桥接
 ├── package.json              # 应用配置
@@ -63,6 +66,7 @@ electron-desktop-app/
 ## 实现状态
 
 ### ✅ 核心功能已完全实现
+
 - Electron 主进程和窗口管理
 - Express.js 后端服务器（所有 API 路由）
 - SQLite 数据库（使用 sql.js，所有操作已实现）
@@ -82,18 +86,21 @@ electron-desktop-app/
 ## 开发流程
 
 ### 运行应用
+
 ```bash
 npm start
 # 启动 Electron 应用（自动启动后端服务器）
 ```
 
 ### 开发模式
+
 ```bash
 npm run dev
 # 以开发模式运行（支持热重载）
 ```
 
 ### 配置 LLM
+
 1. 启动应用后，进入设置页面
 2. 配置 API 端点（OpenAI、DeepSeek 或本地 LLM）
 3. 输入 API Key 和模型名称
@@ -110,12 +117,14 @@ npm run build-win
 ## 技术优势
 
 ### 架构优势
+
 ✅ **纯 Node.js**：单一运行时，无 Python 依赖
 ✅ **离线优先**：OCR 和数据库可完全离线工作
 ✅ **WASM 技术**：tesseract.js 和 sql.js 使用 WebAssembly，无需编译
 ✅ **可配置数据目录**：用户可选择数据存储位置
 
 ### tesseract.js v7 特性
+
 ✅ **本地语言数据**：eng.traineddata 捆绑，无需网络获取
 ✅ **静态 API**：使用 Tesseract.recognize() 确保可靠性
 ✅ **回退机制**：持久化工作进程失败时自动回退到临时工作进程

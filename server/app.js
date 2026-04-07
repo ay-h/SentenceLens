@@ -73,27 +73,40 @@ const upload = multer({
 // ==================== Helper Functions ====================
 
 /**
- * Try to decode a filename that may have encoding issues
- * Handles cases where filenames are incorrectly encoded (e.g., UTF-8 bytes interpreted as Latin1)
+ * Decode filename - handles URL-encoded filenames from frontend
+ * Frontend uses encodeURIComponent to handle Chinese characters
  */
 function decodeFilename(filename) {
   if (!filename) return filename;
 
-  // Try different encoding strategies
+  // Try URL decoding first (for frontend-encoded filenames)
+  if (filename.includes('%')) {
+    try {
+      const decoded = decodeURIComponent(filename);
+      if (decoded !== filename) {
+        return decoded;
+      }
+    } catch (e) {
+      // URL decoding failed, continue
+    }
+  }
 
-  // Strategy 1: Try Windows-1252 to UTF-8 conversion (common issue on Windows)
+  // If already valid UTF-8 without replacement chars, return as-is
+  if (!filename.includes('')) {
+    return filename;
+  }
+
+  // If contains replacement chars, try to fix by treating as Latin1
   try {
     const buffer = Buffer.from(filename, 'binary');
-    const utf8String = iconv.decode(buffer, 'win1252');
-    // Check if it looks like valid UTF-8
-    if (!utf8String.includes('�')) {
+    const utf8String = iconv.decode(buffer, 'latin1');
+    if (!utf8String.includes('') && utf8String !== filename) {
       return utf8String;
     }
   } catch (e) {
-    // Continue to next strategy
+    // Decoding failed
   }
 
-  // If all else fails, return original
   return filename;
 }
 
@@ -354,8 +367,6 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const filename = req.file.filename;
     const imagePath = `/uploads/${filename}`;
 
-    console.log('Processing upload:', filename);
-
     // Perform OCR
     const ocrText = await ocrService.getOCRService().recognize(req.file.path);
 
@@ -363,8 +374,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     let sentences = splitSentences(ocrText);
     sentences = sentences.map(s => cleanSentence(s)).filter(s => s);
 
-    // Create record
-    // Decode filename to handle potential encoding issues
+    // Create record with decoded filename (handles URL-encoded filenames from frontend)
     const decodedFilename = decodeFilename(req.file.originalname || '');
     const originalName = path.parse(decodedFilename).name || '未命名图片';
     const recordName = buildDefaultRecordName(name, originalName);
