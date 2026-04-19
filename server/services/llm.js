@@ -107,7 +107,7 @@ async function analyzeSentence(sentence, baseUrl, apiKey, model) {
       temperature: 0.1,
       maxTokens: 5000,
       jsonMode: true,
-      timeout: 60000,
+      timeout: 90000,
     });
 
     const apiTime = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -187,7 +187,7 @@ ${sentencesText}
       temperature: 0.3,
       maxTokens: 3000,
       jsonMode: true,
-      timeout: 60000,
+      timeout: 90000,
     });
 
     const cleanedContent = (content || '').trim();
