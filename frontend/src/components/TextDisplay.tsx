@@ -17,11 +17,13 @@ export default function TextDisplay() {
   const [analyzing, setAnalyzing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [buttonPosition, setButtonPosition] = useState<'top' | 'bottom'>('bottom');
 
   // Word lookup
   const { wordLookup, lookupWord, closeWordLookup } = useWordLookup();
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingClickRef = useRef<(() => void) | null>(null);
+  const sentenceRef = useRef<HTMLSpanElement>(null);
 
   const handleWordDblClick = useCallback((e: React.MouseEvent<HTMLSpanElement>, word: string) => {
     e.stopPropagation();
@@ -133,18 +135,34 @@ export default function TextDisplay() {
                     setAnalyzing(false);
                     setDeleting(false);
                     setDeleteOpen(false);
+                    setButtonPosition('bottom');
                     return;
                   }
                   setAnalyzing(false);
                   setDeleting(false);
                   setDeleteOpen(false);
                   handleSelectSentence(sentence.trim(), analysis);
+
+                  // Detect if sentence is near top of viewport
+                  setTimeout(() => {
+                    if (sentenceRef.current) {
+                      const rect = sentenceRef.current.getBoundingClientRect();
+                      const viewportHeight = window.innerHeight;
+                      // If sentence is in top 30% of viewport, show buttons below
+                      if (rect.top < viewportHeight * 0.3) {
+                        setButtonPosition('bottom');
+                      } else {
+                        setButtonPosition('top');
+                      }
+                    }
+                  }, 0);
                 };
 
                 return (
                   <React.Fragment key={index}>
                     <div className="relative inline">
                       <span
+                        ref={isSelected ? sentenceRef : null}
                         onClick={(e) => {
                           e.stopPropagation();
                           // Immediate selection without delay
@@ -175,7 +193,9 @@ export default function TextDisplay() {
                       </span>
 
                       {showActions && (
-                        <div className="absolute left-0 bottom-full mb-2 z-10 flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-white shadow-md rounded-md px-3 py-2 border border-gray-200 whitespace-nowrap">
+                        <div className={`absolute left-0 z-10 flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-white shadow-md rounded-md px-3 py-2 border border-gray-200 whitespace-nowrap ${
+                          buttonPosition === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
+                        }`}>
                         <button
                           onClick={onAnalyze}
                           disabled={analyzing || loading}
