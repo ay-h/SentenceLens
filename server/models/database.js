@@ -99,16 +99,8 @@ async function runMigrations() {
     return result.map(t => t.name);
   }
 
-  // Migration 001: Add text editing fields to records table
+  // Migration 001: Add OCR quality fields to records table
   const recordsColumns = getColumns('records');
-  try {
-    if (!recordsColumns.includes('has_unsaved_changes')) {
-      console.log('Migration 001: Adding has_unsaved_changes column to records');
-      db.run('ALTER TABLE records ADD COLUMN has_unsaved_changes INTEGER DEFAULT 0');
-    }
-  } catch (e) {
-    console.log('Migration 001: has_unsaved_changes column may already exist, skipping');
-  }
   try {
     if (!recordsColumns.includes('ocr_quality')) {
       console.log('Migration 001: Adding ocr_quality column to records');

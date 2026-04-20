@@ -348,48 +348,8 @@ class TextEditService {
   }
 
   /**
-   * 设置记录的未保存更改状态
-   * @param {string} recordId - 记录ID
-   * @param {boolean} hasChanges - 是否有未保存更改
-   * @returns {Promise<Object>} 设置结果
-   */
-  async setUnsavedChanges(recordId, hasChanges) {
-    try {
-      execute(
-        "UPDATE records SET has_unsaved_changes = ? WHERE id = ?",
-        [hasChanges ? 1 : 0, recordId]
-      );
-
-      console.log(`记录 ${recordId} 的未保存更改状态设置为: ${hasChanges}`);
-      return { success: true, recordId, hasChanges };
-    } catch (error) {
-      console.error("设置未保存更改状态失败:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * 检查记录是否有未保存更改
-   * @param {string} recordId - 记录ID
-   * @returns {Promise<boolean>} 是否有未保存更改
-   */
-  async hasUnsavedChanges(recordId) {
-    try {
-      const result = queryOne(
-        "SELECT has_unsaved_changes FROM records WHERE id = ?",
-        [recordId]
-      );
-
-      return result && result.has_unsaved_changes === 1;
-    } catch (error) {
-      console.error("检查未保存更改失败:", error);
-      throw error;
-    }
-  }
-
-  /**
    * Sync sentences to database
-   * @param {string} recordId - 记录ID
+   * @param {string} recordId - Record ID
    * @param {Array} paragraphs - Paragraphs with sentence objects containing UUIDs
    * @returns {Promise<Object>} Sync result
    */
@@ -453,9 +413,6 @@ class TextEditService {
           [newText, recordId]
         );
 
-        // 清除未保存更改状态
-        await this.setUnsavedChanges(recordId, false);
-
         return {
           success: true,
           message: "文本已保存（无实质变化）",
@@ -477,9 +434,6 @@ class TextEditService {
       // 同步句子到数据库（使用持久化的UUID）
       const newParagraphs = splitParagraphs(newText, recordId, this.db);
       await this.syncSentencesToDatabase(recordId, newParagraphs);
-
-      // 清除未保存更改状态
-      await this.setUnsavedChanges(recordId, false);
 
       return {
         success: true,

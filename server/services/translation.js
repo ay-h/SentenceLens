@@ -114,16 +114,6 @@ class TranslationService {
   }
 
   /**
-   * Check if record has unsaved changes
-   * @param {number} recordId - Record ID
-   * @returns {boolean} - True if has unsaved changes
-   */
-  hasUnsavedChanges(recordId) {
-    const record = this.db.getRecord(recordId);
-    return record && record.has_unsaved_changes === 1;
-  }
-
-  /**
    * Generate response for no changes scenario
    * @param {Array} sentences - All sentences
    * @returns {Object} - Response object for no changes
@@ -136,20 +126,7 @@ class TranslationService {
         skipped_count: sentences.length,
         no_changes_detected: true,
         translations: []
-      },
-      message: '文本无变化，无需重新翻译'
-    };
-  }
-
-  /**
-   * Generate response for unsaved changes error
-   * @returns {Object} - Error response object
-   */
-  generateUnsavedChangesResponse() {
-    return {
-      success: false,
-      error: '有未保存的更改，请先保存',
-      code: 'UNSAVED_CHANGES'
+      }
     };
   }
 
@@ -230,11 +207,6 @@ class TranslationService {
    */
   async performUnifiedTranslation(recordId, forceAll = false) {
     try {
-      // Check for unsaved changes first
-      if (this.hasUnsavedChanges(recordId)) {
-        return this.generateUnsavedChangesResponse();
-      }
-
       // Get record
       const record = this.db.getRecord(recordId);
       if (!record) {

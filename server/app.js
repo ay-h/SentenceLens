@@ -317,20 +317,6 @@ app.put('/api/records/:id/text/edit', async (req, res) => {
 });
 
 /**
- * Check if record has unsaved changes
- */
-app.get('/api/records/:id/unsaved-changes', async (req, res) => {
-  try {
-    const recordId = parseInt(req.params.id);
-    const hasChanges = await textEditService.hasUnsavedChanges(recordId);
-    res.json({ hasUnsavedChanges: hasChanges });
-  } catch (error) {
-    console.error('Check unsaved changes error:', error);
-    res.status(500).json({ detail: error.message });
-  };
-});
-
-/**
  * Unified translation - automatically detects changes and translates only needed sentences
  */
 app.post('/api/records/:id/translate', async (req, res) => {
