@@ -70,6 +70,12 @@ export default function TextDisplay() {
       <div className="max-w-3xl mx-auto space-y-4">
         {Object.keys(groupedSentences).map(pIndex => {
           const paragraphSentences = groupedSentences[Number(pIndex)];
+          // Collect translations for this paragraph
+          const paragraphTranslations = paragraphSentences
+            .map(s => translationMap[s.index])
+            .filter(t => t)
+            .join(' ');
+
           return (
             <div key={pIndex} className="mb-6">
               {paragraphSentences.map((sentenceObj) => {
@@ -78,7 +84,6 @@ export default function TextDisplay() {
                 const analysis = findAnalysis(sentence);
                 const isSelected = selectedSentence === sentence.trim();
                 const isAnalyzed = !!analysis;
-                const translation = translationMap[index];
 
                 async function onAnalyze() {
                   if (analyzing || loading) return;
@@ -169,14 +174,8 @@ export default function TextDisplay() {
                         })}
                       </span>
 
-                      {showTranslation && translation && (
-                        <span className="text-[14px] text-blue-700/70 ml-1">
-                          {translation}
-                        </span>
-                      )}
-
                       {showActions && (
-                        <div className="absolute left-0 top-full mt-2 z-10 flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-white shadow-md rounded-md px-3 py-2 border border-gray-200 whitespace-nowrap">
+                        <div className="absolute left-0 bottom-full mb-2 z-10 flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-white shadow-md rounded-md px-3 py-2 border border-gray-200 whitespace-nowrap">
                         <button
                           onClick={onAnalyze}
                           disabled={analyzing || loading}
@@ -227,6 +226,24 @@ export default function TextDisplay() {
                   </React.Fragment>
                 );
               })}
+
+              {showTranslation && paragraphTranslations && (
+                <div className="mt-3 text-[14px] text-blue-700/80 leading-relaxed pl-2 border-l-2 border-blue-200">
+                  {paragraphSentences.map((sentenceObj) => {
+                    const translation = translationMap[sentenceObj.index];
+                    if (!translation) return null;
+                    const isSelected = selectedSentence === sentenceObj.text.trim();
+                    return (
+                      <span
+                        key={sentenceObj.index}
+                        className={isSelected ? 'bg-blue-100 px-1 rounded' : ''}
+                      >
+                        {translation}{' '}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}
