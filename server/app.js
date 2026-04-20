@@ -332,14 +332,40 @@ app.delete('/api/sentences/:id', (req, res) => {
     // Delete the sentence
     db.deleteSentence(sentenceId);
 
-    // Update sentence_index for remaining sentences in the same paragraph
-    const sentences = db.getSentencesByRecord(recordId);
-    const paragraphSentences = sentences
-      .filter(s => s.paragraph_index === paragraphIndex && s.sentence_index > sentenceIndex)
-      .sort((a, b) => a.sentence_index - b.sentence_index);
+    // Recalculate paragraph_index and sentence_index for all paragraphs to ensure they start from 0
+    const allSentences = db.getSentencesByRecord(recordId);
+    const grouped = {};
+    for (const s of allSentences) {
+      const pIndex = s.paragraph_index || 0;
+      if (!grouped[pIndex]) {
+        grouped[pIndex] = [];
+      }
+      grouped[pIndex].push(s);
+    }
 
-    for (const s of paragraphSentences) {
-      db.execute('UPDATE sentences SET sentence_index = sentence_index - 1 WHERE id = ?', [s.id]);
+    // Sort paragraphs by paragraph_index
+    const sortedParagraphs = Object.keys(grouped)
+      .map(Number)
+      .sort((a, b) => a - b);
+
+    // Reindex paragraphs starting from 0 and sentences within each paragraph starting from 0
+    for (let p = 0; p < sortedParagraphs.length; p++) {
+      const oldPIndex = sortedParagraphs[p];
+      const paragraphSentences = grouped[oldPIndex].sort((a, b) => a.sentence_index - b.sentence_index);
+      
+      for (let i = 0; i < paragraphSentences.length; i++) {
+        const s = paragraphSentences[i];
+        const updates = [];
+        if (s.paragraph_index !== p) {
+          updates.push(`paragraph_index = ${p}`);
+        }
+        if (s.sentence_index !== i) {
+          updates.push(`sentence_index = ${i}`);
+        }
+        if (updates.length > 0) {
+          db.execute(`UPDATE sentences SET ${updates.join(', ')} WHERE id = ?`, [s.id]);
+        }
+      }
     }
 
     console.log(`Sentence deleted: ${sentenceId}`);
@@ -419,25 +445,33 @@ app.post('/api/sentences/insert', (req, res) => {
       // Calculate new sentence index
       if (position === 'before') {
         newSentenceIndex = sentence_index;
+        console.log(`Inserting before: newParagraphIndex=${newParagraphIndex}, newSentenceIndex=${newSentenceIndex}`);
         // Update existing sentences in the same paragraph
         const sentences = db.getSentencesByRecord(record_id);
         const affectedSentences = sentences
           .filter(s => s.paragraph_index === newParagraphIndex && s.sentence_index >= sentence_index)
           .sort((a, b) => b.sentence_index - a.sentence_index); // Sort descending to update from end
 
+        console.log(`Affected sentences (before):`, affectedSentences.map(s => ({id: s.id, paragraph_index: s.paragraph_index, sentence_index: s.sentence_index})));
+
         for (const s of affectedSentences) {
-          db.execute('UPDATE sentences SET sentence_index = sentence_index + 1 WHERE id = ?', [s.id]);
+          const result = db.execute('UPDATE sentences SET sentence_index = sentence_index + 1 WHERE id = ?', [s.id]);
+          console.log(`Updated sentence ${s.id}: sentence_index ${s.sentence_index} -> ${s.sentence_index + 1}, changes: ${result.changes}`);
         }
       } else {
         newSentenceIndex = sentence_index + 1;
+        console.log(`Inserting after: newParagraphIndex=${newParagraphIndex}, newSentenceIndex=${newSentenceIndex}`);
         // Update existing sentences in the same paragraph
         const sentences = db.getSentencesByRecord(record_id);
         const affectedSentences = sentences
           .filter(s => s.paragraph_index === newParagraphIndex && s.sentence_index > sentence_index)
           .sort((a, b) => b.sentence_index - a.sentence_index);
 
+        console.log(`Affected sentences (after):`, affectedSentences.map(s => ({id: s.id, paragraph_index: s.paragraph_index, sentence_index: s.sentence_index})));
+
         for (const s of affectedSentences) {
-          db.execute('UPDATE sentences SET sentence_index = sentence_index + 1 WHERE id = ?', [s.id]);
+          const result = db.execute('UPDATE sentences SET sentence_index = sentence_index + 1 WHERE id = ?', [s.id]);
+          console.log(`Updated sentence ${s.id}: sentence_index ${s.sentence_index} -> ${s.sentence_index + 1}, changes: ${result.changes}`);
         }
       }
     }
@@ -451,12 +485,52 @@ app.post('/api/sentences/insert', (req, res) => {
       [newSentenceId]
     );
 
-    console.log(`Sentence inserted: ${newSentenceId}`);
+    console.log(`Sentence inserted: ${newSentenceId}, paragraph_index: ${newParagraphIndex}, sentence_index: ${newSentenceIndex}`);
+
+    // Recalculate sentence indices for all paragraphs to ensure they start from 0
+    const allSentences = db.getSentencesByRecord(record_id);
+    const grouped = {};
+    for (const s of allSentences) {
+      const pIndex = s.paragraph_index || 0;
+      if (!grouped[pIndex]) {
+        grouped[pIndex] = [];
+      }
+      grouped[pIndex].push(s);
+    }
+
+    // Sort paragraphs by paragraph_index
+    const sortedParagraphs = Object.keys(grouped)
+      .map(Number)
+      .sort((a, b) => a - b);
+
+    // Reindex paragraphs starting from 0 and sentences within each paragraph starting from 0
+    for (let p = 0; p < sortedParagraphs.length; p++) {
+      const oldPIndex = sortedParagraphs[p];
+      const paragraphSentences = grouped[oldPIndex].sort((a, b) => a.sentence_index - b.sentence_index);
+      
+      for (let i = 0; i < paragraphSentences.length; i++) {
+        const s = paragraphSentences[i];
+        const updates = [];
+        if (s.paragraph_index !== p) {
+          updates.push(`paragraph_index = ${p}`);
+        }
+        if (s.sentence_index !== i) {
+          updates.push(`sentence_index = ${i}`);
+        }
+        if (updates.length > 0) {
+          db.execute(`UPDATE sentences SET ${updates.join(', ')} WHERE id = ?`, [s.id]);
+        }
+      }
+    }
+
+    const updatedSentences = db.getSentencesByRecord(record_id);
+    console.log(`Updated sentences count: ${updatedSentences.length}`);
+    console.log(`All sentences after reindex:`, updatedSentences.map(s => ({id: s.id, paragraph_index: s.paragraph_index, sentence_index: s.sentence_index, text: s.text.substring(0, 30)})));
 
     res.json({
       success: true,
       message: 'Sentence inserted',
-      sentences: db.getSentencesByRecord(record_id)
+      sentences: updatedSentences
     });
   } catch (error) {
     console.error('Sentence insert error:', error);
@@ -545,6 +619,42 @@ app.post('/api/sentences/:id/split', (req, res) => {
     // Clear translations and analyses for the original sentence
     db.execute('DELETE FROM sentence_translations WHERE sentence_id = ?', [sentenceId]);
     db.execute('DELETE FROM sentence_analyses WHERE sentence_id = ?', [sentenceId]);
+
+    // Recalculate paragraph_index and sentence_index for all paragraphs to ensure they start from 0
+    const allSentences = db.getSentencesByRecord(record_id);
+    const grouped = {};
+    for (const s of allSentences) {
+      const pIndex = s.paragraph_index || 0;
+      if (!grouped[pIndex]) {
+        grouped[pIndex] = [];
+      }
+      grouped[pIndex].push(s);
+    }
+
+    // Sort paragraphs by paragraph_index
+    const sortedParagraphs = Object.keys(grouped)
+      .map(Number)
+      .sort((a, b) => a - b);
+
+    // Reindex paragraphs starting from 0 and sentences within each paragraph starting from 0
+    for (let p = 0; p < sortedParagraphs.length; p++) {
+      const oldPIndex = sortedParagraphs[p];
+      const paragraphSentences = grouped[oldPIndex].sort((a, b) => a.sentence_index - b.sentence_index);
+      
+      for (let i = 0; i < paragraphSentences.length; i++) {
+        const s = paragraphSentences[i];
+        const updates = [];
+        if (s.paragraph_index !== p) {
+          updates.push(`paragraph_index = ${p}`);
+        }
+        if (s.sentence_index !== i) {
+          updates.push(`sentence_index = ${i}`);
+        }
+        if (updates.length > 0) {
+          db.execute(`UPDATE sentences SET ${updates.join(', ')} WHERE id = ?`, [s.id]);
+        }
+      }
+    }
 
     console.log(`Sentence split: ${sentenceId} -> ${firstPartId}, ${secondPartId}`);
 

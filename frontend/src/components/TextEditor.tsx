@@ -2,7 +2,7 @@ import { deleteSentence, editSentence, insertSentence, splitSentence } from '@/a
 import { getRecordSentences } from '@/api';
 import { ConfirmDialog, Dialog } from '@/components/Dialog';
 import { useApp } from '@/store/AppContext';
-import { Check, Loader2, Plus, Save, Scissors, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Edit, Loader2, Plus, Save, Scissors, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -128,22 +128,35 @@ export default function TextEditor({ onClose }: TextEditorProps) {
       return;
     }
 
+    console.log('Inserting sentence:', {
+      recordId: currentRecord.id,
+      text: insertText,
+      targetId: insertTargetId,
+      position: insertPosition,
+      newParagraph: insertNewParagraph
+    });
+
     setIsSaving(true);
     try {
-      await insertSentence(
+      const result = await insertSentence(
         currentRecord.id,
         insertText,
         insertTargetId,
         insertPosition,
         insertNewParagraph
       );
-      await loadSentences();
-      toast.success('句子已插入');
-      setShowInsertDialog(false);
-      setInsertText('');
+      console.log('Insert result:', result);
+      if (result.success) {
+        await loadSentences();
+        toast.success('句子已插入');
+        setShowInsertDialog(false);
+        setInsertText('');
+      } else {
+        toast.error(result.message || '插入句子失败');
+      }
     } catch (error) {
       console.error('Failed to insert sentence:', error);
-      toast.error('插入句子失败');
+      toast.error(`插入句子失败: ${error instanceof Error ? error.message : '未知错误'}`);
     } finally {
       setIsSaving(false);
     }
@@ -205,6 +218,8 @@ export default function TextEditor({ onClose }: TextEditorProps) {
     if (editingSentenceId) {
       setShowConfirmDialog(true);
     } else {
+      // Refresh data before closing
+      fetchCurrentRecord();
       onClose?.();
     }
   }
@@ -213,6 +228,8 @@ export default function TextEditor({ onClose }: TextEditorProps) {
     setShowConfirmDialog(false);
     setEditingSentenceId(null);
     setEditingText('');
+    // Refresh data before closing
+    fetchCurrentRecord();
     onClose?.();
   }
 
@@ -336,21 +353,21 @@ export default function TextEditor({ onClose }: TextEditorProps) {
                               className="p-1.5 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                               title="编辑"
                             >
-                              <Save size={14} />
+                              <Edit size={14} />
                             </button>
                             <button
                               onClick={() => openInsertDialog(sentence.id, 'before')}
                               className="p-1.5 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                               title="在前面插入"
                             >
-                              <Plus size={14} />
+                              <ArrowUp size={14} />
                             </button>
                             <button
                               onClick={() => openInsertDialog(sentence.id, 'after')}
                               className="p-1.5 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                               title="在后面插入"
                             >
-                              <Plus size={14} />
+                              <ArrowDown size={14} />
                             </button>
                             <button
                               onClick={() => openSplitDialog(sentence.id, sentence.text)}

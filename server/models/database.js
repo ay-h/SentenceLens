@@ -173,11 +173,11 @@ async function runMigrations() {
     console.log('Migration 005: sentence_id column may already exist in sentence_analyses, skipping');
   }
 
-  // Migration 007: Remove ocr_text column from records table
+  // Migration 007: Remove ocr_text column from records table (if it exists)
   try {
     const recordsColumns = getColumns('records');
     if (recordsColumns.includes('ocr_text')) {
-      console.log('Migration 007: Dropping ocr_text column from records');
+      console.log('Migration 007: Removing ocr_text column from records');
       // SQLite doesn't support DROP COLUMN directly, need to recreate table
       db.run(`
         CREATE TABLE records_new AS SELECT id, session_id, name, image_path, created_at FROM records
@@ -202,6 +202,7 @@ async function runMigrations() {
           text TEXT NOT NULL,
           paragraph_index INTEGER DEFAULT 0,
           sentence_index INTEGER DEFAULT 0,
+          is_modified INTEGER DEFAULT 0,
           created_at DATETIME DEFAULT (datetime('now', 'localtime')),
           FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
         )
@@ -211,6 +212,17 @@ async function runMigrations() {
     }
   } catch (e) {
     console.log('Migration 006: sentences table may already exist, skipping');
+  }
+
+  // Migration 008: Ensure is_modified column exists in sentences table
+  try {
+    const sentencesColumns = getColumns('sentences');
+    if (!sentencesColumns.includes('is_modified')) {
+      console.log('Migration 008: Adding is_modified column to sentences');
+      db.run('ALTER TABLE sentences ADD COLUMN is_modified INTEGER DEFAULT 0');
+    }
+  } catch (e) {
+    console.log('Migration 008: is_modified column may already exist, skipping');
   }
 
   console.log('Migrations completed');

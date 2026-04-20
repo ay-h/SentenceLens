@@ -374,5 +374,6 @@ module.exports = {
   splitSentences,
   splitParagraphs,
   cleanSentence,
-  detectChanges  // NEW: 导出新的变化检测功能
+  detectChanges,  // NEW: 导出新的变化检测功能
+  generateUUID  // NEW: 导出UUID生成函数
 };
