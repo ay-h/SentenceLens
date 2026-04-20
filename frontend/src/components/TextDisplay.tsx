@@ -138,44 +138,45 @@ export default function TextDisplay() {
 
                 return (
                   <React.Fragment key={index}>
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // Immediate selection without delay
-                        handleSentenceClick();
-                      }}
-                      className={`inline cursor-pointer rounded px-1 py-0.5 text-[19px] leading-9 text-gray-900 transition-all ${
+                    <div className="relative inline">
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // Immediate selection without delay
+                          handleSentenceClick();
+                        }}
+                        className={`inline cursor-pointer rounded px-1 py-0.5 text-[19px] leading-9 text-gray-900 transition-all ${
                         isSelected
                           ? 'bg-blue-100 text-[var(--color-primary)]'
                           : isAnalyzed
                             ? 'bg-green-50 hover:bg-green-100'
                             : 'hover:bg-gray-100'
                       }`}
-                      style={isAnalyzed ? { borderBottom: '2px solid var(--color-success)' } : undefined}
-                    >
-                      {wordTokens.map((token: string, ti: number) => {
-                        const isWord = /[\p{L}\d]/u.test(token);
-                        if (!isWord) return <span key={ti}>{token}</span>;
-                        return (
-                          <span
-                            key={ti}
-                            onDoubleClick={(e) => handleWordDblClick(e, token)}
-                            className=""
-                          >
-                            {token}
-                          </span>
-                        );
-                      })}
-                    </span>
-
-                    {showTranslation && translation && (
-                      <span className="text-[14px] text-blue-700/70 ml-1">
-                        {translation}
+                        style={isAnalyzed ? { borderBottom: '2px solid var(--color-success)' } : undefined}
+                      >
+                        {wordTokens.map((token: string, ti: number) => {
+                          const isWord = /[\p{L}\d]/u.test(token);
+                          if (!isWord) return <span key={ti}>{token}</span>;
+                          return (
+                            <span
+                              key={ti}
+                              onDoubleClick={(e) => handleWordDblClick(e, token)}
+                              className=""
+                            >
+                              {token}
+                            </span>
+                          );
+                        })}
                       </span>
-                    )}
 
-                    {showActions && (
-                      <div className="flex flex-wrap items-center gap-2 mt-2 pl-1 text-xs text-[var(--color-text-secondary)]">
+                      {showTranslation && translation && (
+                        <span className="text-[14px] text-blue-700/70 ml-1">
+                          {translation}
+                        </span>
+                      )}
+
+                      {showActions && (
+                        <div className="absolute left-0 top-full mt-2 z-10 flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-white shadow-md rounded-md px-3 py-2 border border-gray-200 whitespace-nowrap">
                         <button
                           onClick={onAnalyze}
                           disabled={analyzing || loading}
@@ -222,6 +223,7 @@ export default function TextDisplay() {
                       confirmText="删除"
                       danger
                     />
+                    </div>
                   </React.Fragment>
                 );
               })}
