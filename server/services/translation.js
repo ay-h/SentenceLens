@@ -12,7 +12,7 @@ class TranslationService {
   /**
    * Get sentences from record text
    * @param {Object} record - Record object with ocr_text
-   * @returns {Array} - Array of sentence objects
+   * @returns {Array} - Array of sentence objects with paragraph info
    */
   getSentencesFromRecord(record) {
     if (!record || !record.ocr_text) {
@@ -20,19 +20,28 @@ class TranslationService {
     }
 
     // Import sentence splitting functions
-    const { splitSentences, cleanSentence } = require('./sentenceSplit');
-    
-    // Split and clean sentences
-    let sentences = splitSentences(record.ocr_text);
-    sentences = sentences.map(s => cleanSentence(s)).filter(s => s);
+    const { splitParagraphs, cleanSentence } = require('./sentenceSplit');
 
-    // Convert to sentence objects with mock properties for compatibility
-    return sentences.map((text, index) => ({
-      id: index + 1, // Use index as temporary ID
-      text: text,
-      translation: null, // Will be loaded separately
-      is_modified: 0 // Default value
-    }));
+    // Split into paragraphs and sentences
+    const paragraphs = splitParagraphs(record.ocr_text);
+    const sentences = [];
+
+    let globalIndex = 0;
+    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+      const paragraphSentences = paragraphs[pIndex].map(s => cleanSentence(s)).filter(s => s);
+      for (const text of paragraphSentences) {
+        sentences.push({
+          id: globalIndex + 1, // Use index as temporary ID
+          text: text,
+          translation: null, // Will be loaded separately
+          is_modified: 0, // Default value
+          paragraph_index: pIndex // Add paragraph index
+        });
+        globalIndex++;
+      }
+    }
+
+    return sentences;
   }
 
   /**
@@ -160,20 +169,22 @@ class TranslationService {
       for (let i = 0; i < sentencesToTranslate.length; i++) {
         const sentence = sentencesToTranslate[i];
         const result = translationResults[i];
-        
+
         if (result && !result.error) {
-          // Create translation record
+          // Create translation record with paragraph_index
           const translation = this.db.createTranslation(
             recordId,
             sentence.text,
             result.translated_sentence,
-            sentence.id - 1 // Use 0-based index
+            sentence.id - 1, // Use 0-based index
+            sentence.paragraph_index || 0 // Add paragraph index
           );
-          
+
           successfulTranslations.push({
             sentence_id: sentence.id,
             sentence_text: sentence.text,
             translation: result.translated_sentence,
+            paragraph_index: sentence.paragraph_index || 0,
             translation_time_ms: result.translation_time_ms || 100
           });
         } else {

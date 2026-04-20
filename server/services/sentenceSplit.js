@@ -103,18 +103,48 @@ function isDigit(ch) {
 }
 
 /**
+ * Split text into paragraphs and sentences.
+ * Returns an array of paragraphs, where each paragraph is an array of sentences.
+ */
+function splitParagraphs(text) {
+  if (!text || !text.trim()) return [];
+
+  // Split by line breaks to get paragraphs
+  const rawParagraphs = text.split(/\n+/);
+  const paragraphs = [];
+
+  for (const para of rawParagraphs) {
+    const trimmed = para.trim();
+    if (trimmed) {
+      // Split each paragraph into sentences
+      const sentences = splitSentences(trimmed);
+      if (sentences.length > 0) {
+        paragraphs.push(sentences);
+      }
+    }
+  }
+
+  return paragraphs;
+}
+
+/**
  * Split text into sentences using abbreviation whitelist.
  */
 function splitSentences(text) {
   if (!text || !text.trim()) return [];
 
+  // Preprocess: insert space after period if followed by uppercase letter and not already a space
+  // This handles OCR text like "days ago.No matter" -> "days ago. No matter"
+  let processedText = text;
+  processedText = processedText.replace(/\.([A-Z])/g, '. $1');
+
   const sentences = [];
   let currentSentence = '';
   let i = 0;
-  const n = text.length;
+  const n = processedText.length;
 
   while (i < n) {
-    const char = text[i];
+    const char = processedText[i];
 
     if (char !== '.' && char !== '!' && char !== '?') {
       currentSentence += char;
@@ -127,8 +157,19 @@ function splitSentences(text) {
     // Decimal / numeric dot: 1.5, 3.14, $9.99
     if (
       char === '.' &&
-      i > 0 && isDigit(text[i - 1]) &&
-      i + 1 < n && isDigit(text[i + 1])
+      i > 0 && isDigit(processedText[i - 1]) &&
+      i + 1 < n && isDigit(processedText[i + 1])
+    ) {
+      currentSentence += char;
+      i++;
+      continue;
+    }
+
+    // Numbered list item: 3. Draft First (digit + dot + space)
+    if (
+      char === '.' &&
+      i > 0 && isDigit(processedText[i - 1]) &&
+      (i + 1 >= n || processedText[i + 1] === ' ')
     ) {
       currentSentence += char;
       i++;
@@ -136,7 +177,7 @@ function splitSentences(text) {
     }
 
     // Mid-chain initial dot: J.(K), U.(S)
-    if (char === '.' && _isInitialDot(text, i)) {
+    if (char === '.' && _isInitialDot(processedText, i)) {
       currentSentence += char;
       i++;
       continue;
@@ -148,14 +189,14 @@ function splitSentences(text) {
     // Consume this mark and any consecutive punctuation (... / ?! / !!)
     currentSentence += char;
     i++;
-    while (i < n && (text[i] === '.' || text[i] === '!' || text[i] === '?')) {
-      currentSentence += text[i];
+    while (i < n && (processedText[i] === '.' || processedText[i] === '!' || processedText[i] === '?')) {
+      currentSentence += processedText[i];
       i++;
     }
 
     // Consume closing quotes / brackets
-    while (i < n && CLOSING_PUNCTUATION.has(text[i])) {
-      currentSentence += text[i];
+    while (i < n && CLOSING_PUNCTUATION.has(processedText[i])) {
+      currentSentence += processedText[i];
       i++;
     }
 
@@ -164,12 +205,23 @@ function splitSentences(text) {
     let isSentenceEnd = true;
 
     // Next meaningful character is lowercase → not a new sentence
-    if (i + 1 < n && isLowerCase(text[i + 1])) {
+    if (i + 1 < n && isLowerCase(processedText[i + 1])) {
       isSentenceEnd = false;
     }
 
+    // Dot followed by uppercase letter without space → likely sentence boundary (e.g., "ago.No", "later.You")
+    if (isSentenceEnd && i + 1 < n && isUpperCase(processedText[i + 1])) {
+      // Check if there's no space after the dot
+      if (i + 1 < n && processedText[i + 1] !== ' ') {
+        // But still check for abbreviations first
+        if (_isAbbreviation(processedText, punctStart)) {
+          isSentenceEnd = false;
+        }
+      }
+    }
+
     // Abbreviation / initials check
-    if (isSentenceEnd && _isAbbreviation(text, punctStart)) {
+    if (isSentenceEnd && _isAbbreviation(processedText, punctStart)) {
       isSentenceEnd = false;
     }
 
@@ -285,6 +337,7 @@ async function detectChanges(recordId, oldText, newText) {
 
 module.exports = {
   splitSentences,
+  splitParagraphs,
   cleanSentence,
   detectChanges  // NEW: 导出新的变化检测功能
 };

@@ -128,6 +128,19 @@ async function runMigrations() {
     console.log('Migration 002: sentences table not found, skipping');
   }
 
+  // Migration 003: Add paragraph_index to sentence_analyses and sentence_translations
+  const analysesColumns = getColumns('sentence_analyses');
+  if (!analysesColumns.includes('paragraph_index')) {
+    console.log('Migration 003: Adding paragraph_index column to sentence_analyses');
+    db.run('ALTER TABLE sentence_analyses ADD COLUMN paragraph_index INTEGER DEFAULT 0');
+  }
+
+  const translationsColumns = getColumns('sentence_translations');
+  if (!translationsColumns.includes('paragraph_index')) {
+    console.log('Migration 003: Adding paragraph_index column to sentence_translations');
+    db.run('ALTER TABLE sentence_translations ADD COLUMN paragraph_index INTEGER DEFAULT 0');
+  }
+
   console.log('Migrations completed');
 }
 
@@ -432,13 +445,13 @@ function deleteRecord(id) {
  * ==================== Analysis Operations ====================
  */
 
-function createAnalysis(recordId, sentence, analysisResult) {
+function createAnalysis(recordId, sentence, analysisResult, paragraphIndex = 0) {
   // Normalize sentence to ensure consistent storage
   const normalizedSentence = sentence.replace(/\s+/g, ' ').trim();
 
   const result = execute(
-    'INSERT INTO sentence_analyses (record_id, sentence, analysis) VALUES (?, ?, ?)',
-    [recordId, normalizedSentence, JSON.stringify(analysisResult)]
+    'INSERT INTO sentence_analyses (record_id, sentence, analysis, paragraph_index) VALUES (?, ?, ?, ?)',
+    [recordId, normalizedSentence, JSON.stringify(analysisResult), paragraphIndex]
   );
   const analysis = queryOne('SELECT * FROM sentence_analyses WHERE id = ?', [result.lastInsertRowid]);
   if (analysis) {
@@ -497,6 +510,35 @@ function getAnalysesByRecord(recordId) {
   return analyses;
 }
 
+function getAnalysesByRecordGrouped(recordId) {
+  const analyses = queryAll(
+    'SELECT * FROM sentence_analyses WHERE record_id = ? ORDER BY paragraph_index ASC, created_at ASC',
+    [recordId]
+  );
+
+  for (const a of analyses) {
+    try {
+      a.analysis = JSON.parse(a.analysis);
+    } catch (e) { /* keep as string */ }
+  }
+
+  // Group by paragraph_index
+  const grouped = {};
+  for (const a of analyses) {
+    const pIndex = a.paragraph_index || 0;
+    if (!grouped[pIndex]) {
+      grouped[pIndex] = [];
+    }
+    grouped[pIndex].push(a);
+  }
+
+  // Convert to array and sort by paragraph index
+  return Object.keys(grouped)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map(pIndex => grouped[pIndex]);
+}
+
 function deleteAnalysis(id) {
   const result = execute('DELETE FROM sentence_analyses WHERE id = ?', [id]);
   return result.changes > 0;
@@ -532,13 +574,13 @@ function getLatestLLMConfig() {
  * ==================== Translation Operations ====================
  */
 
-function createTranslation(recordId, original, translated, sentenceIndex) {
+function createTranslation(recordId, original, translated, sentenceIndex, paragraphIndex = 0) {
   // Normalize sentence
   const normalizedOriginal = original.replace(/\s+/g, ' ').trim();
 
   const result = execute(
-    'INSERT INTO sentence_translations (record_id, original_sentence, translated_sentence, sentence_index) VALUES (?, ?, ?, ?)',
-    [recordId, normalizedOriginal, translated, sentenceIndex || 0]
+    'INSERT INTO sentence_translations (record_id, original_sentence, translated_sentence, sentence_index, paragraph_index) VALUES (?, ?, ?, ?, ?)',
+    [recordId, normalizedOriginal, translated, sentenceIndex || 0, paragraphIndex]
   );
   return queryOne('SELECT * FROM sentence_translations WHERE id = ?', [result.lastInsertRowid]);
 }
@@ -558,6 +600,29 @@ function getTranslationsByRecord(recordId) {
     'SELECT * FROM sentence_translations WHERE record_id = ? ORDER BY sentence_index ASC',
     [recordId]
   );
+}
+
+function getTranslationsByRecordGrouped(recordId) {
+  const translations = queryAll(
+    'SELECT * FROM sentence_translations WHERE record_id = ? ORDER BY paragraph_index ASC, sentence_index ASC',
+    [recordId]
+  );
+
+  // Group by paragraph_index
+  const grouped = {};
+  for (const t of translations) {
+    const pIndex = t.paragraph_index || 0;
+    if (!grouped[pIndex]) {
+      grouped[pIndex] = [];
+    }
+    grouped[pIndex].push(t);
+  }
+
+  // Convert to array and sort by paragraph index
+  return Object.keys(grouped)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map(pIndex => grouped[pIndex]);
 }
 
 /**
@@ -620,12 +685,14 @@ module.exports = {
   createAnalysis,
   getAnalysisBySentence,
   getAnalysesByRecord,
+  getAnalysesByRecordGrouped,
   deleteAnalysis,
   updateLLMConfig,
   getLatestLLMConfig,
   createTranslation,
   getTranslationBySentence,
   getTranslationsByRecord,
+  getTranslationsByRecordGrouped,
   getWordDefinition,
   createWordDefinition,
   close,

@@ -21,7 +21,8 @@ export function useAppStore() {
     return v ? parseInt(v) : null;
   });
   const [currentRecord, setCurrentRecord] = useState<RecordDetail | null>(null);
-  const [sentences, setSentences] = useState<string[]>([]);
+  const [sentences, setSentences] = useState<Array<{ text: string; index: number; paragraph_index: number }>>([]);
+  const [paragraphs, setParagraphs] = useState<string[][]>([]);
   const [translations, setTranslations] = useState<Translation[]>([]);
   const [selectedSentence, setSelectedSentence] = useState<string | null>(null);
   const [selectedAnalysis, setSelectedAnalysis] = useState<SentenceAnalysis | null>(null);
@@ -63,6 +64,7 @@ export function useAppStore() {
 
     setCurrentRecord(detail);
     setSentences(sentData.sentences);
+    setParagraphs(sentData.paragraphs || []);
     setTranslations(transData.translations);
     persistSession(detail.session_id, recordId);
   }, [persistSession]);
@@ -84,6 +86,7 @@ export function useAppStore() {
       setCurrentRecordId(null);
       setCurrentRecord(null);
       setSentences([]);
+      setParagraphs([]);
       setTranslations([]);
       setSelectedSentence(null);
       setSelectedAnalysis(null);
@@ -101,6 +104,7 @@ export function useAppStore() {
     setCurrentRecordId(null);
     setCurrentRecord(null);
     setSentences([]);
+    setParagraphs([]);
     setTranslations([]);
     setSelectedSentence(null);
     setSelectedAnalysis(null);
@@ -118,6 +122,7 @@ export function useAppStore() {
       setCurrentRecordId(null);
       setCurrentRecord(null);
       setSentences([]);
+      setParagraphs([]);
       setTranslations([]);
       setSelectedSentence(null);
       setSelectedAnalysis(null);
@@ -224,6 +229,7 @@ export function useAppStore() {
       setCurrentRecordId(null);
       setCurrentRecord(null);
       setSentences([]);
+      setParagraphs([]);
       setTranslations([]);
       setSelectedSentence(null);
       setSelectedAnalysis(null);
@@ -355,6 +361,7 @@ export function useAppStore() {
     currentRecordId,
     currentRecord,
     sentences,
+    paragraphs,
     translations,
     selectedSentence,
     selectedAnalysis,

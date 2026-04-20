@@ -61,7 +61,10 @@ export async function getRecord(id: number): Promise<RecordDetail> {
   return request(`/api/records/${id}`);
 }
 
-export async function getRecordSentences(id: number): Promise<{ sentences: string[] }> {
+export async function getRecordSentences(id: number): Promise<{
+  sentences: Array<{ text: string; index: number; paragraph_index: number }>;
+  paragraphs: string[][];
+}> {
   return request(`/api/records/${id}/sentences`);
 }
 

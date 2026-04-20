@@ -16,7 +16,7 @@ const iconv = require('iconv-lite');
 const ocrService = require('./services/ocr');
 const llmService = require('./services/llm');
 const dictionaryService = require('./services/dictionary');
-const { splitSentences, cleanSentence } = require('./services/sentenceSplit');
+const { splitSentences, splitParagraphs, cleanSentence } = require('./services/sentenceSplit');
 const db = require('./models/database');
 
 // Initialize services
@@ -217,9 +217,23 @@ app.get('/api/records/:id/sentences', (req, res) => {
     if (!record) {
       return res.status(404).json({ detail: 'Record not found' });
     }
-    let sentences = splitSentences(record.ocr_text);
-    sentences = sentences.map(s => cleanSentence(s)).filter(s => s);
-    res.json({ sentences });
+    // Use splitParagraphs to get paragraph-grouped sentences
+    const paragraphs = splitParagraphs(record.ocr_text);
+    // Flatten the paragraphs into a single array with paragraph_index
+    const sentences = [];
+    let globalIndex = 0;
+    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+      const paragraphSentences = paragraphs[pIndex].map(s => cleanSentence(s)).filter(s => s);
+      for (const text of paragraphSentences) {
+        sentences.push({
+          text: text,
+          index: globalIndex,
+          paragraph_index: pIndex
+        });
+        globalIndex++;
+      }
+    }
+    res.json({ sentences, paragraphs });
   } catch (error) {
     res.status(500).json({ detail: error.message });
   }
