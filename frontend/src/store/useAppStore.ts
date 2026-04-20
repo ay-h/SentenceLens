@@ -21,7 +21,7 @@ export function useAppStore() {
     return v ? parseInt(v) : null;
   });
   const [currentRecord, setCurrentRecord] = useState<RecordDetail | null>(null);
-  const [sentences, setSentences] = useState<Array<{ text: string; index: number; paragraph_index: number }>>([]);
+  const [sentences, setSentences] = useState<Array<{ id?: string; text: string; index: number; paragraph_index: number }>>([]);
   const [paragraphs, setParagraphs] = useState<string[][]>([]);
   const [translations, setTranslations] = useState<Translation[]>([]);
   const [selectedSentence, setSelectedSentence] = useState<string | null>(null);
@@ -179,26 +179,27 @@ export function useAppStore() {
     if (!selectedSentence || !currentRecordId) return;
     setLoading(true);
     try {
-      const result = await api.analyzeSentence(selectedSentence, currentRecordId);
+      // Find the sentence_id from the sentences array
+      const sentenceObj = sentences.find(s => s.text.trim() === selectedSentence.trim());
+      const sentence_id = sentenceObj?.id;
+      const result = await api.analyzeSentence(selectedSentence, currentRecordId, sentence_id);
       if (result.analysis?.success) {
         // Refresh record detail to update analyses list
         await selectRecordRef.current(currentRecordId);
         // Re-select the sentence to show analysis
         setSelectedSentence(selectedSentence);
-        setSelectedAnalysis({
-          id: 0,
-          record_id: currentRecordId,
-          sentence: selectedSentence,
-          analysis: result.analysis,
-          created_at: new Date().toISOString(),
-        });
-        setAnalysisVisible(true);
+        // The analysis is now in the record's analyses list after refresh
+        // Find it and set it
+        const updatedRecord = await api.getRecord(currentRecordId);
+        const analysis = updatedRecord.analyses?.find(a => a.sentence === selectedSentence);
+        setSelectedAnalysis(analysis || null);
       }
-      return result;
+    } catch (error) {
+      console.error('Analysis failed:', error);
     } finally {
       setLoading(false);
     }
-  }, [selectedSentence, currentRecordId]);
+  }, [selectedSentence, currentRecordId, sentences]);
 
   // Delete analysis
   const handleDeleteAnalysis = useCallback(async () => {

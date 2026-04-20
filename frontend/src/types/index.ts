@@ -14,12 +14,20 @@ export interface Record {
   created_at: string;
 }
 
+export interface Sentence {
+  id?: string;
+  text: string;
+  index: number;
+  paragraph_index: number;
+}
+
 export interface SentenceAnalysis {
   id: number;
   record_id: number;
   sentence: string;
   analysis: AnalysisData;
   created_at: string;
+  sentence_id?: string;
 }
 
 export interface RecordDetail extends Record {
@@ -82,6 +90,7 @@ export interface Translation {
   sentence_index: number;
   original_sentence: string;
   translated_sentence: string;
+  sentence_id?: string;
 }
 
 export interface LLMConfig {

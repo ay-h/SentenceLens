@@ -89,31 +89,41 @@ async function runMigrations() {
   console.log('Running database migrations...');
 
   // Get table info to check what columns exist
-  const getColumns = (tableName) => {
-    try {
-      const result = db.exec(`PRAGMA table_info(${tableName})`);
-      if (result && result.length > 0 && result[0].values) {
-        return result[0].values.map(row => row[1]); // Column name is at index 1
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  };
+  function getColumns(tableName) {
+    const result = queryOne(`PRAGMA table_info(${tableName})`);
+    return result ? Object.keys(result).filter(k => k !== 'cid' && k !== 'name' && k !== 'type' && k !== 'notnull' && k !== 'dflt_value' && k !== 'pk') : [];
+  }
+
+  function getTables() {
+    const result = queryAll("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
+    return result.map(t => t.name);
+  }
 
   // Migration 001: Add text editing fields to records table
   const recordsColumns = getColumns('records');
-  if (!recordsColumns.includes('has_unsaved_changes')) {
-    console.log('Migration 001: Adding has_unsaved_changes column to records');
-    db.run('ALTER TABLE records ADD COLUMN has_unsaved_changes INTEGER DEFAULT 0');
+  try {
+    if (!recordsColumns.includes('has_unsaved_changes')) {
+      console.log('Migration 001: Adding has_unsaved_changes column to records');
+      db.run('ALTER TABLE records ADD COLUMN has_unsaved_changes INTEGER DEFAULT 0');
+    }
+  } catch (e) {
+    console.log('Migration 001: has_unsaved_changes column may already exist, skipping');
   }
-  if (!recordsColumns.includes('ocr_quality')) {
-    console.log('Migration 001: Adding ocr_quality column to records');
-    db.run('ALTER TABLE records ADD COLUMN ocr_quality TEXT');
+  try {
+    if (!recordsColumns.includes('ocr_quality')) {
+      console.log('Migration 001: Adding ocr_quality column to records');
+      db.run('ALTER TABLE records ADD COLUMN ocr_quality TEXT');
+    }
+  } catch (e) {
+    console.log('Migration 001: ocr_quality column may already exist, skipping');
   }
-  if (!recordsColumns.includes('confidence_avg')) {
-    console.log('Migration 001: Adding confidence_avg column to records');
-    db.run('ALTER TABLE records ADD COLUMN confidence_avg REAL');
+  try {
+    if (!recordsColumns.includes('confidence_avg')) {
+      console.log('Migration 001: Adding confidence_avg column to records');
+      db.run('ALTER TABLE records ADD COLUMN confidence_avg REAL');
+    }
+  } catch (e) {
+    console.log('Migration 001: confidence_avg column may already exist, skipping');
   }
 
   // Migration 002: Add is_modified field to sentences table (if it exists)
@@ -129,16 +139,69 @@ async function runMigrations() {
   }
 
   // Migration 003: Add paragraph_index to sentence_analyses and sentence_translations
-  const analysesColumns = getColumns('sentence_analyses');
-  if (!analysesColumns.includes('paragraph_index')) {
-    console.log('Migration 003: Adding paragraph_index column to sentence_analyses');
-    db.run('ALTER TABLE sentence_analyses ADD COLUMN paragraph_index INTEGER DEFAULT 0');
+  try {
+    const analysesColumns = getColumns('sentence_analyses');
+    if (!analysesColumns.includes('paragraph_index')) {
+      console.log('Migration 003: Adding paragraph_index column to sentence_analyses');
+      db.run('ALTER TABLE sentence_analyses ADD COLUMN paragraph_index INTEGER DEFAULT 0');
+    }
+  } catch (e) {
+    console.log('Migration 003: paragraph_index column may already exist in sentence_analyses, skipping');
   }
 
-  const translationsColumns = getColumns('sentence_translations');
-  if (!translationsColumns.includes('paragraph_index')) {
-    console.log('Migration 003: Adding paragraph_index column to sentence_translations');
-    db.run('ALTER TABLE sentence_translations ADD COLUMN paragraph_index INTEGER DEFAULT 0');
+  try {
+    const translationsColumns = getColumns('sentence_translations');
+    if (!translationsColumns.includes('paragraph_index')) {
+      console.log('Migration 003: Adding paragraph_index column to sentence_translations');
+      db.run('ALTER TABLE sentence_translations ADD COLUMN paragraph_index INTEGER DEFAULT 0');
+    }
+  } catch (e) {
+    console.log('Migration 003: paragraph_index column may already exist in sentence_translations, skipping');
+  }
+
+  // Migration 004: Add sentence_id field to sentence_translations for UUID-based matching
+  try {
+    const translationsColumns = getColumns('sentence_translations');
+    if (!translationsColumns.includes('sentence_id')) {
+      console.log('Migration 004: Adding sentence_id column to sentence_translations');
+      db.run('ALTER TABLE sentence_translations ADD COLUMN sentence_id TEXT');
+    }
+  } catch (e) {
+    console.log('Migration 004: sentence_id column may already exist in sentence_translations, skipping');
+  }
+
+  // Migration 005: Add sentence_id field to sentence_analyses for UUID-based matching
+  try {
+    const analysesColumnsForId = getColumns('sentence_analyses');
+    if (!analysesColumnsForId.includes('sentence_id')) {
+      console.log('Migration 005: Adding sentence_id column to sentence_analyses');
+      db.run('ALTER TABLE sentence_analyses ADD COLUMN sentence_id TEXT');
+    }
+  } catch (e) {
+    console.log('Migration 005: sentence_id column may already exist in sentence_analyses, skipping');
+  }
+
+  // Migration 006: Create sentences table to store sentence UUIDs
+  try {
+    const tables = getTables();
+    if (!tables.includes('sentences')) {
+      console.log('Migration 006: Creating sentences table');
+      db.run(`
+        CREATE TABLE IF NOT EXISTS sentences (
+          id TEXT PRIMARY KEY,
+          record_id INTEGER NOT NULL,
+          text TEXT NOT NULL,
+          paragraph_index INTEGER DEFAULT 0,
+          sentence_index INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+          FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
+        )
+      `);
+      // Create index for faster queries
+      db.run('CREATE INDEX IF NOT EXISTS idx_sentences_record_id ON sentences(record_id)');
+    }
+  } catch (e) {
+    console.log('Migration 006: sentences table may already exist, skipping');
   }
 
   console.log('Migrations completed');
@@ -445,13 +508,13 @@ function deleteRecord(id) {
  * ==================== Analysis Operations ====================
  */
 
-function createAnalysis(recordId, sentence, analysisResult, paragraphIndex = 0) {
+function createAnalysis(recordId, sentence, analysisResult, paragraphIndex = 0, sentenceId) {
   // Normalize sentence to ensure consistent storage
   const normalizedSentence = sentence.replace(/\s+/g, ' ').trim();
 
   const result = execute(
-    'INSERT INTO sentence_analyses (record_id, sentence, analysis, paragraph_index) VALUES (?, ?, ?, ?)',
-    [recordId, normalizedSentence, JSON.stringify(analysisResult), paragraphIndex]
+    'INSERT INTO sentence_analyses (record_id, sentence, analysis, paragraph_index, sentence_id) VALUES (?, ?, ?, ?, ?)',
+    [recordId, normalizedSentence, JSON.stringify(analysisResult), paragraphIndex, sentenceId || null]
   );
   const analysis = queryOne('SELECT * FROM sentence_analyses WHERE id = ?', [result.lastInsertRowid]);
   if (analysis) {
@@ -545,6 +608,45 @@ function deleteAnalysis(id) {
 }
 
 /**
+ * ==================== Sentence Operations ====================
+ */
+
+function createSentence(recordId, text, paragraphIndex, sentenceIndex, sentenceId) {
+  const normalizedText = text.replace(/\s+/g, ' ').trim();
+  const result = execute(
+    'INSERT INTO sentences (id, record_id, text, paragraph_index, sentence_index) VALUES (?, ?, ?, ?, ?)',
+    [sentenceId, recordId, normalizedText, paragraphIndex, sentenceIndex]
+  );
+  return queryOne('SELECT * FROM sentences WHERE id = ?', [sentenceId]);
+}
+
+function getSentencesByRecord(recordId) {
+  return queryAll(
+    'SELECT * FROM sentences WHERE record_id = ? ORDER BY paragraph_index ASC, sentence_index ASC',
+    [recordId]
+  );
+}
+
+function getSentenceById(sentenceId) {
+  return queryOne('SELECT * FROM sentences WHERE id = ?', [sentenceId]);
+}
+
+function deleteSentence(sentenceId) {
+  const result = execute('DELETE FROM sentences WHERE id = ?', [sentenceId]);
+  return result.changes > 0;
+}
+
+function deleteSentencesByRecord(recordId) {
+  execute('DELETE FROM sentences WHERE record_id = ?', [recordId]);
+}
+
+function updateSentenceText(sentenceId, newText) {
+  const normalizedText = newText.replace(/\s+/g, ' ').trim();
+  execute('UPDATE sentences SET text = ? WHERE id = ?', [normalizedText, sentenceId]);
+  return getSentenceById(sentenceId);
+}
+
+/**
  * ==================== LLM Config Operations ====================
  */
 
@@ -574,13 +676,12 @@ function getLatestLLMConfig() {
  * ==================== Translation Operations ====================
  */
 
-function createTranslation(recordId, original, translated, sentenceIndex, paragraphIndex = 0) {
-  // Normalize sentence
-  const normalizedOriginal = original.replace(/\s+/g, ' ').trim();
+function createTranslation(recordId, originalSentence, translatedSentence, sentenceIndex, paragraphIndex, sentenceId) {
+  const normalizedOriginal = originalSentence.split(' ').join(' ');
 
   const result = execute(
-    'INSERT INTO sentence_translations (record_id, original_sentence, translated_sentence, sentence_index, paragraph_index) VALUES (?, ?, ?, ?, ?)',
-    [recordId, normalizedOriginal, translated, sentenceIndex || 0, paragraphIndex]
+    'INSERT INTO sentence_translations (record_id, original_sentence, translated_sentence, sentence_index, paragraph_index, sentence_id) VALUES (?, ?, ?, ?, ?, ?)',
+    [recordId, normalizedOriginal, translatedSentence, sentenceIndex || 0, paragraphIndex, sentenceId || null]
   );
   return queryOne('SELECT * FROM sentence_translations WHERE id = ?', [result.lastInsertRowid]);
 }
@@ -695,6 +796,12 @@ module.exports = {
   getTranslationsByRecordGrouped,
   getWordDefinition,
   createWordDefinition,
+  createSentence,
+  getSentencesByRecord,
+  getSentenceById,
+  deleteSentence,
+  deleteSentencesByRecord,
+  updateSentenceText,
   close,
   getDB,
   queryAll,

@@ -213,26 +213,69 @@ app.get('/api/records/:id', (req, res) => {
 
 app.get('/api/records/:id/sentences', (req, res) => {
   try {
-    const record = db.getRecord(parseInt(req.params.id));
+    const recordId = parseInt(req.params.id);
+    const record = db.getRecord(recordId);
     if (!record) {
       return res.status(404).json({ detail: 'Record not found' });
     }
-    // Use splitParagraphs to get paragraph-grouped sentences
-    const paragraphs = splitParagraphs(record.ocr_text);
-    // Flatten the paragraphs into a single array with paragraph_index
-    const sentences = [];
-    let globalIndex = 0;
-    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
-      const paragraphSentences = paragraphs[pIndex].map(s => cleanSentence(s)).filter(s => s);
-      for (const text of paragraphSentences) {
-        sentences.push({
-          text: text,
-          index: globalIndex,
-          paragraph_index: pIndex
-        });
-        globalIndex++;
+
+    // Try to get sentences from database first
+    let dbSentences = [];
+    try {
+      dbSentences = db.getSentencesByRecord(recordId);
+    } catch (error) {
+      console.log('No sentences in database yet, will generate');
+    }
+
+    let sentences = [];
+    let paragraphs = [];
+
+    if (dbSentences.length > 0) {
+      // Use persisted sentences from database
+      sentences = dbSentences.map((s, idx) => ({
+        id: s.id,
+        text: s.text,
+        index: idx,
+        paragraph_index: s.paragraph_index
+      }));
+
+      // Group by paragraph_index for paragraphs
+      const grouped = {};
+      for (const s of sentences) {
+        const pIndex = s.paragraph_index || 0;
+        if (!grouped[pIndex]) {
+          grouped[pIndex] = [];
+        }
+        grouped[pIndex].push(s.text);
+      }
+      paragraphs = Object.keys(grouped)
+        .map(Number)
+        .sort((a, b) => a - b)
+        .map(pIndex => grouped[pIndex]);
+    } else {
+      // No persisted sentences yet, generate from ocr_text
+      const generatedParagraphs = splitParagraphs(record.ocr_text, recordId, db);
+      paragraphs = generatedParagraphs.map(p => p.map(s => s.text));
+
+      let globalIndex = 0;
+      for (let pIndex = 0; pIndex < generatedParagraphs.length; pIndex++) {
+        const paragraphSentences = generatedParagraphs[pIndex].map(s => {
+          const cleaned = cleanSentence(s.text);
+          return {
+            id: s.id,
+            text: cleaned,
+            index: globalIndex,
+            paragraph_index: pIndex
+          };
+        }).filter(s => s.text);
+
+        for (const sentence of paragraphSentences) {
+          sentences.push(sentence);
+          globalIndex++;
+        }
       }
     }
+
     res.json({ sentences, paragraphs });
   } catch (error) {
     res.status(500).json({ detail: error.message });
@@ -402,6 +445,26 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const recordName = buildDefaultRecordName(name, originalName);
     const record = db.createRecord(sessionId, recordName, imagePath, ocrText);
 
+    // Sync sentences to database for UUID persistence
+    // Check if sentences already exist for this record to avoid duplicates
+    const existingSentences = db.getSentencesByRecord(record.id);
+    if (existingSentences.length === 0) {
+      const paragraphs = splitParagraphs(ocrText, record.id, db);
+      let sentenceIndex = 0;
+      for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+        const paragraph = paragraphs[pIndex];
+        for (const sentence of paragraph) {
+          db.createSentence(
+            record.id,
+            sentence.text,
+            pIndex,
+            sentenceIndex++,
+            sentence.id
+          );
+        }
+      }
+    }
+
     // Build response
     const response = {
       record_id: record.id,
@@ -456,6 +519,26 @@ app.post('/api/text', (req, res) => {
     const recordName = buildTextRecordName(name, text);
     const record = db.createRecord(sessionId, recordName, imagePath, text);
 
+    // Sync sentences to database for UUID persistence
+    // Check if sentences already exist for this record to avoid duplicates
+    const existingSentences = db.getSentencesByRecord(record.id);
+    if (existingSentences.length === 0) {
+      const paragraphs = splitParagraphs(text, record.id, db);
+      let sentenceIndex = 0;
+      for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+        const paragraph = paragraphs[pIndex];
+        for (const sentence of paragraph) {
+          db.createSentence(
+            record.id,
+            sentence.text,
+            pIndex,
+            sentenceIndex++,
+            sentence.id
+          );
+        }
+      }
+    }
+
     res.json({
       record_id: record.id,
       session_id: sessionId,
@@ -507,12 +590,17 @@ app.post('/api/ocr/recognize', upload.single('file'), async (req, res) => {
 
 app.post('/api/analyze', async (req, res) => {
   try {
-    const { sentence, record_id } = req.body;
+    const { sentence, record_id, sentence_id } = req.body;
 
     console.log(`Analyzing sentence for record_id: ${record_id}`);
 
-    // Check if analysis already exists
-    const existing = db.getAnalysisBySentence(record_id, sentence);
+    // Check if analysis already exists (by sentence_id if provided)
+    let existing;
+    if (sentence_id) {
+      existing = db.queryOne('SELECT * FROM sentence_analyses WHERE record_id = ? AND sentence_id = ?', [record_id, sentence_id]);
+    } else {
+      existing = db.getAnalysisBySentence(record_id, sentence);
+    }
     if (existing) {
       console.log('Existing analysis found, returning cached result.');
       return res.json({ analysis: existing.analysis });
@@ -531,8 +619,8 @@ app.post('/api/analyze', async (req, res) => {
     const analysis = await llmService.analyzeSentence(sentence, config.url, config.api_key, config.model);
 
     if (analysis.success) {
-      // Save to database
-      db.createAnalysis(record_id, sentence, analysis);
+      // Save to database with sentence_id
+      db.createAnalysis(record_id, sentence, analysis, 0, sentence_id);
       console.log('Analysis saved to database');
     } else {
       console.log(`Analysis failed: ${analysis.error}`);

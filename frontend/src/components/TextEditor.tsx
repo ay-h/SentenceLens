@@ -25,16 +25,31 @@ export default function TextEditor({ onClose }: TextEditorProps) {
 
   const savedTextRef = useRef('');
 
-  // Split text into sentences for sentence-level editing
-  const splitIntoSentences = (text: string): string[] => {
-    return text
+  // Split text into paragraphs for paragraph-level editing
+  const splitIntoParagraphs = (text: string): string[] => {
+    return text.split(/\n+/).filter(p => p.trim());
+  };
+
+  // Join paragraphs back into text
+  const joinParagraphs = (paragraphs: string[]): string => {
+    return paragraphs.join('\n\n');
+  };
+
+  // Get current paragraphs
+  const getCurrentParagraphs = (): string[] => {
+    return splitIntoParagraphs(editingText);
+  };
+
+  // Get flat sentence list for backward compatibility (use backend splitting)
+  const getCurrentSentences = (): string[] => {
+    // For display purposes, just split by sentences simply
+    // Backend will handle proper sentence splitting
+    return editingText
       .split(/([.!?]+)\s*/)
       .filter((part, index, arr) => {
-        // Keep non-empty parts and punctuation that follows text
         return part.trim() !== '' || (index > 0 && index % 2 === 1);
       })
       .reduce((acc: string[], part, index) => {
-        // Combine punctuation with preceding text
         if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
           const lastText = acc.pop() || '';
           acc.push(lastText + part);
@@ -44,16 +59,6 @@ export default function TextEditor({ onClose }: TextEditorProps) {
         return acc;
       }, [])
       .filter(sentence => sentence.trim().length > 0);
-  };
-
-  // Join sentences back into text
-  const joinSentences = (sentences: string[]): string => {
-    return sentences.join(' ').replace(/\s{2,}/g, ' ').trim();
-  };
-
-  // Get current sentences
-  const getCurrentSentences = (): string[] => {
-    return splitIntoSentences(editingText);
   };
 
   // Initialize with current record text
@@ -112,23 +117,82 @@ export default function TextEditor({ onClose }: TextEditorProps) {
   }
 
   function handleSentenceEdit(index: number, newText: string) {
-    const sentences = getCurrentSentences();
-    const updatedSentences = [...sentences];
-    updatedSentences[index] = newText;
-    
-    const newFullText = joinSentences(updatedSentences);
-    handleTextChange(newFullText);
-    
+    // Get current paragraphs
+    const paragraphs = getCurrentParagraphs();
+
+    // Find which paragraph contains the sentence at the given index
+    let currentGlobalIndex = 0;
+    let targetParaIndex = -1;
+
+    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+      const paraSentences = paragraphs[pIndex]
+        .split(/([.!?]+)\s*/)
+        .filter((part, index, arr) => {
+          return part.trim() !== '' || (index > 0 && index % 2 === 1);
+        })
+        .reduce((acc: string[], part, index) => {
+          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
+            const lastText = acc.pop() || '';
+            acc.push(lastText + part);
+          } else if (part.trim()) {
+            acc.push(part);
+          }
+          return acc;
+        }, [])
+        .filter(sentence => sentence.trim().length > 0);
+
+      if (currentGlobalIndex + paraSentences.length > index) {
+        targetParaIndex = pIndex;
+        break;
+      }
+      currentGlobalIndex += paraSentences.length;
+    }
+
+    if (targetParaIndex !== -1) {
+      // Reconstruct the target paragraph with the edited sentence
+      const paraSentences = paragraphs[targetParaIndex]
+        .split(/([.!?]+)\s*/)
+        .filter((part, index, arr) => {
+          return part.trim() !== '' || (index > 0 && index % 2 === 1);
+        })
+        .reduce((acc: string[], part, index) => {
+          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
+            const lastText = acc.pop() || '';
+            acc.push(lastText + part);
+          } else if (part.trim()) {
+            acc.push(part);
+          }
+          return acc;
+        }, [])
+        .filter(sentence => sentence.trim().length > 0);
+
+      // Find the sentence index within the paragraph
+      const sentenceIndexInPara = index - currentGlobalIndex;
+      paraSentences[sentenceIndexInPara] = newText;
+
+      // Reconstruct the paragraph
+      const updatedPara = paraSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
+
+      // Update the paragraphs array
+      const updatedParagraphs = [...paragraphs];
+      updatedParagraphs[targetParaIndex] = updatedPara;
+
+      // Join all paragraphs back
+      const newFullText = joinParagraphs(updatedParagraphs);
+      handleTextChange(newFullText);
+    }
+
     // Track modified sentences
-    const originalSentences = splitIntoSentences(originalText);
+    const originalSentences = getCurrentSentences();
+    const newSentences = getCurrentSentences();
     const newModifiedSentences = new Set<number>();
-    
-    updatedSentences.forEach((sentence, idx) => {
+
+    newSentences.forEach((sentence, idx) => {
       if (sentence.trim() !== (originalSentences[idx] || '').trim()) {
         newModifiedSentences.add(idx);
       }
     });
-    
+
     setModifiedSentences(newModifiedSentences);
   }
 

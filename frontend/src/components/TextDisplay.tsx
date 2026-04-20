@@ -39,16 +39,24 @@ export default function TextDisplay() {
 
   if (!currentRecord || sentences.length === 0) return null;
 
-  // Build translation map
-  const translationMap: Record<number, string> = {};
+  // Build translation map based on sentence_id (UUID) for accurate matching
+  const translationMap: Record<string, string> = {};
   translations.forEach(t => {
-    translationMap[t.sentence_index] = t.translated_sentence;
+    if (t.sentence_id) {
+      translationMap[t.sentence_id] = t.translated_sentence;
+    }
   });
 
   // Build analysis map for quick lookup
   const analyses = currentRecord.analyses || [];
 
-  function findAnalysis(sentence: string): SentenceAnalysis | null {
+  function findAnalysis(sentence: string, sentenceId?: string): SentenceAnalysis | null {
+    // Try to match by sentence_id first (UUID-based matching)
+    if (sentenceId) {
+      const found = analyses.find(a => a.sentence_id === sentenceId);
+      if (found) return found;
+    }
+    // Fallback to content matching for backward compatibility
     const normalized = sentence.split(' ').join(' ');
     const found = analyses.find(a => {
       if (!a.sentence) return false;
@@ -58,13 +66,18 @@ export default function TextDisplay() {
   }
 
   // Group sentences by paragraph_index
-  const groupedSentences: Record<number, Array<{text: string; index: number; paragraph_index: number}>> = {};
+  const groupedSentences: Record<number, Array<{id?: string; text: string; index: number; paragraph_index: number}>> = {};
   sentences.forEach(s => {
     const pIndex = s.paragraph_index || 0;
     if (!groupedSentences[pIndex]) {
       groupedSentences[pIndex] = [];
     }
-    groupedSentences[pIndex].push(s);
+    groupedSentences[pIndex].push({
+      id: (s as any).id, // Cast to any since id is optional and may not exist in old data
+      text: s.text,
+      index: s.index,
+      paragraph_index: s.paragraph_index
+    });
   });
 
   return (
@@ -74,7 +87,7 @@ export default function TextDisplay() {
           const paragraphSentences = groupedSentences[Number(pIndex)];
           // Collect translations for this paragraph
           const paragraphTranslations = paragraphSentences
-            .map(s => translationMap[s.index])
+            .map(s => s.id ? translationMap[s.id] : null)
             .filter(t => t)
             .join(' ');
 
@@ -83,7 +96,7 @@ export default function TextDisplay() {
               {paragraphSentences.map((sentenceObj) => {
                 const sentence = sentenceObj.text;
                 const index = sentenceObj.index;
-                const analysis = findAnalysis(sentence);
+                const analysis = findAnalysis(sentence, sentenceObj.id);
                 const isSelected = selectedSentence === sentence.trim();
                 const isAnalyzed = !!analysis;
 
@@ -92,12 +105,8 @@ export default function TextDisplay() {
                   setAnalyzing(true);
                   try {
                     toast.info('正在分析句子...');
-                    const result = await handleAnalyze();
-                    if (result?.analysis?.success) {
-                      toast.success('分析完成');
-                    } else {
-                      toast.error(result?.analysis?.error || '分析失败');
-                    }
+                    await handleAnalyze();
+                    toast.success('分析完成');
                   } catch (err: unknown) {
                     toast.error(`分析失败: ${err instanceof Error ? err.message : '未知错误'}`);
                   } finally {
@@ -250,7 +259,7 @@ export default function TextDisplay() {
               {showTranslation && paragraphTranslations && (
                 <div className="mt-3 text-[14px] text-blue-700/80 leading-relaxed pl-2 border-l-2 border-blue-200">
                   {paragraphSentences.map((sentenceObj) => {
-                    const translation = translationMap[sentenceObj.index];
+                    const translation = sentenceObj.id ? translationMap[sentenceObj.id] : null;
                     if (!translation) return null;
                     const isSelected = selectedSentence === sentenceObj.text.trim();
                     return (

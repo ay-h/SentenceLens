@@ -12,7 +12,7 @@ class TranslationService {
   /**
    * Get sentences from record text
    * @param {Object} record - Record object with ocr_text
-   * @returns {Array} - Array of sentence objects with paragraph info
+   * @returns {Array} - Array of sentence objects with paragraph info and UUID
    */
   getSentencesFromRecord(record) {
     if (!record || !record.ocr_text) {
@@ -22,21 +22,26 @@ class TranslationService {
     // Import sentence splitting functions
     const { splitParagraphs, cleanSentence } = require('./sentenceSplit');
 
-    // Split into paragraphs and sentences
-    const paragraphs = splitParagraphs(record.ocr_text);
+    // Split into paragraphs and sentences (now includes persisted UUIDs)
+    const paragraphs = splitParagraphs(record.ocr_text, record.id, this.db);
     const sentences = [];
 
     let globalIndex = 0;
     for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
-      const paragraphSentences = paragraphs[pIndex].map(s => cleanSentence(s)).filter(s => s);
-      for (const text of paragraphSentences) {
-        sentences.push({
-          id: globalIndex + 1, // Use index as temporary ID
-          text: text,
+      const paragraphSentences = paragraphs[pIndex].map(s => {
+        const cleaned = cleanSentence(s.text);
+        return {
+          id: s.id, // Use the UUID from splitParagraphs
+          text: cleaned,
           translation: null, // Will be loaded separately
           is_modified: 0, // Default value
           paragraph_index: pIndex // Add paragraph index
-        });
+        };
+      }).filter(s => s.text);
+
+      for (const sentence of paragraphSentences) {
+        sentence.index = globalIndex; // Add index for display purposes
+        sentences.push(sentence);
         globalIndex++;
       }
     }
@@ -81,19 +86,21 @@ class TranslationService {
     let sentencesToTranslate = [];
     let skippedCount = 0;
 
-    // Create a map of existing translations by sentence index
-    const translationMap = new Map();
+    // Create a map of existing translations by sentence_id (UUID)
+    const translationById = new Map();
     existingTranslations.forEach(t => {
-      translationMap.set(t.sentence_index, t);
+      if (t.sentence_id) {
+        translationById.set(t.sentence_id, t);
+      }
     });
 
     if (forceAll) {
       // Translate all untranslated sentences
-      sentencesToTranslate = sentences.filter((s, index) => !translationMap.has(index));
+      sentencesToTranslate = sentences.filter(s => !translationById.has(s.id));
       skippedCount = sentences.length - sentencesToTranslate.length;
     } else {
-      // For now, translate all untranslated sentences (since we don't have modification tracking)
-      sentencesToTranslate = sentences.filter((s, index) => !translationMap.has(index));
+      // Check if sentence has translation by sentence_id
+      sentencesToTranslate = sentences.filter(s => !translationById.has(s.id));
       skippedCount = sentences.length - sentencesToTranslate.length;
     }
 
@@ -156,12 +163,9 @@ class TranslationService {
    */
   async translateAndUpdateSentences(sentencesToTranslate, recordId, config, skippedCount) {
     try {
-      // Extract sentence texts for translation
-      const sentenceTexts = sentencesToTranslate.map(s => s.text);
-
-      // Translate sentences
+      // Pass sentence objects (with UUIDs) instead of just text
       const translationResults = await this.llmService.translateSentencesBatch(
-        sentenceTexts, recordId, config.url, config.api_key, config.model, this.db
+        sentencesToTranslate, recordId, config.url, config.api_key, config.model, this.db
       );
 
       // Update database with new translations
@@ -171,13 +175,14 @@ class TranslationService {
         const result = translationResults[i];
 
         if (result && !result.error) {
-          // Create translation record with paragraph_index
+          // Create translation record with sentence_id (UUID) if available
           const translation = this.db.createTranslation(
             recordId,
             sentence.text,
             result.translated_sentence,
-            sentence.id - 1, // Use 0-based index
-            sentence.paragraph_index || 0 // Add paragraph index
+            sentence.index || 0, // Use display index
+            sentence.paragraph_index || 0, // Add paragraph index
+            sentence.id || null // Use UUID if available, otherwise null
           );
 
           successfulTranslations.push({

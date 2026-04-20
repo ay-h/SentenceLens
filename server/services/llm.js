@@ -249,24 +249,29 @@ async function translateSentencesBatch(sentences, recordId, baseUrl, apiKey, mod
   const results = [];
   const sentencesToTranslate = [];
   const indicesToTranslate = [];
+  const sentenceObjects = []; // Store full sentence objects with UUIDs
 
   // First, check for existing translations
   for (let i = 0; i < sentences.length; i++) {
-    const sentence = sentences[i];
-    const existing = db.getTranslationBySentence(recordId, sentence);
+    const sentenceObj = sentences[i];
+    const sentenceText = sentenceObj.text || sentenceObj; // Support both object and string
+    const sentenceId = sentenceObj.id;
+
+    const existing = db.getTranslationBySentence(recordId, sentenceText);
 
     if (existing) {
-      console.log(`Using cached translation for sentence ${i + 1}: ${sentence.substring(0, 30)}...`);
+      console.log(`Using cached translation for sentence ${i + 1}: ${sentenceText.substring(0, 30)}...`);
       results.push({
-        original_sentence: sentence,
+        original_sentence: sentenceText,
         translated_sentence: existing.translated_sentence,
         sentence_index: i,
         from_cache: true,
       });
     } else {
-      console.log(`Need to translate sentence ${i + 1}: ${sentence.substring(0, 30)}...`);
-      sentencesToTranslate.push(sentence);
+      console.log(`Need to translate sentence ${i + 1}: ${sentenceText.substring(0, 30)}...`);
+      sentencesToTranslate.push(sentenceText);
       indicesToTranslate.push(i);
+      sentenceObjects.push(sentenceObj);
     }
   }
 
@@ -276,24 +281,25 @@ async function translateSentencesBatch(sentences, recordId, baseUrl, apiKey, mod
     const batchResults = await batchTranslate(sentencesToTranslate, baseUrl, apiKey, model);
 
     for (let i = 0; i < sentencesToTranslate.length; i++) {
-      const sentence = sentencesToTranslate[i];
+      const sentenceText = sentencesToTranslate[i];
       const translation = batchResults[i];
       const originalIndex = indicesToTranslate[i];
+      const sentenceObj = sentenceObjects[i];
+      const sentenceId = sentenceObj.id || null;
+      const paragraphIndex = sentenceObj.paragraph_index || 0;
 
       if (translation.success) {
-        // Save to database
-        db.createTranslation(recordId, sentence, translation.translated_sentence, originalIndex);
-
+        // Return translation result, caller will handle storage
         results.push({
-          original_sentence: sentence,
+          original_sentence: sentenceText,
           translated_sentence: translation.translated_sentence,
           sentence_index: originalIndex,
           from_cache: false,
         });
       } else {
-        console.log(`Translation failed for sentence: ${sentence.substring(0, 30)}...`);
+        console.log(`Translation failed for sentence: ${sentenceText.substring(0, 30)}...`);
         results.push({
-          original_sentence: sentence,
+          original_sentence: sentenceText,
           translated_sentence: `[翻译失败: ${translation.error || '未知错误'}]`,
           sentence_index: originalIndex,
           from_cache: false,

@@ -104,14 +104,29 @@ function isDigit(ch) {
 
 /**
  * Split text into paragraphs and sentences.
- * Returns an array of paragraphs, where each paragraph is an array of sentences.
+ * Returns an array of paragraphs, where each paragraph is an array of sentence objects with UUID.
+ * If recordId and db are provided, uses persisted UUIDs from database.
  */
-function splitParagraphs(text) {
+function splitParagraphs(text, recordId = null, db = null) {
   if (!text || !text.trim()) return [];
 
   // Split by line breaks to get paragraphs
   const rawParagraphs = text.split(/\n+/);
   const paragraphs = [];
+
+  // Get existing sentences from database if provided
+  let existingSentencesMap = new Map();
+  if (recordId && db) {
+    try {
+      const existingSentences = db.getSentencesByRecord(recordId);
+      existingSentences.forEach(s => {
+        const normalizedText = s.text.replace(/\s+/g, ' ').trim();
+        existingSentencesMap.set(normalizedText, s.id);
+      });
+    } catch (error) {
+      console.error('Error fetching existing sentences:', error);
+    }
+  }
 
   for (const para of rawParagraphs) {
     const trimmed = para.trim();
@@ -119,12 +134,32 @@ function splitParagraphs(text) {
       // Split each paragraph into sentences
       const sentences = splitSentences(trimmed);
       if (sentences.length > 0) {
-        paragraphs.push(sentences);
+        // Add UUID to each sentence - reuse existing if available
+        const sentencesWithIds = sentences.map(sentence => {
+          const normalizedText = sentence.replace(/\s+/g, ' ').trim();
+          const existingId = existingSentencesMap.get(normalizedText);
+          return {
+            id: existingId || generateUUID(),
+            text: sentence
+          };
+        });
+        paragraphs.push(sentencesWithIds);
       }
     }
   }
 
   return paragraphs;
+}
+
+/**
+ * Generate a simple UUID
+ */
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
 }
 
 /**
