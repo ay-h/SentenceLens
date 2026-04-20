@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Edit2, Check, X } from 'lucide-react';
+import { Edit2, Check, X, Plus, Scissors, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 import './SentenceEditor.css';
 
 interface SentenceEditorProps {
@@ -7,13 +7,25 @@ interface SentenceEditorProps {
   index: number;
   isModified: boolean;
   onEdit: (index: number, newText: string) => void;
+  onDelete?: (index: number) => void;
+  onInsertBefore?: (index: number) => void;
+  onInsertAfter?: (index: number) => void;
+  onSplit?: (index: number) => void;
+  isFirstInParagraph?: boolean;
+  isLastInParagraph?: boolean;
 }
 
 export default function SentenceEditor({ 
   sentence, 
   index, 
   isModified, 
-  onEdit
+  onEdit,
+  onDelete,
+  onInsertBefore,
+  onInsertAfter,
+  onSplit,
+  isFirstInParagraph = false,
+  isLastInParagraph = false
 }: SentenceEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(sentence);
@@ -99,6 +111,42 @@ export default function SentenceEditor({
             >
               <Edit2 size={14} />
             </button>
+            {onInsertBefore && isFirstInParagraph && (
+              <button
+                onClick={() => onInsertBefore(index)}
+                className="sentence-action-button insert"
+                title="向前插入"
+              >
+                <ArrowUp size={14} />
+              </button>
+            )}
+            {onInsertAfter && isLastInParagraph && (
+              <button
+                onClick={() => onInsertAfter(index)}
+                className="sentence-action-button insert"
+                title="向后插入"
+              >
+                <ArrowDown size={14} />
+              </button>
+            )}
+            {onSplit && (
+              <button
+                onClick={() => onSplit(index)}
+                className="sentence-action-button split"
+                title="拆分句子"
+              >
+                <Scissors size={14} />
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={() => onDelete(index)}
+                className="sentence-action-button delete"
+                title="删除句子"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         </div>
       )}

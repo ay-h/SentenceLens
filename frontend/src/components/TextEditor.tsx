@@ -61,6 +61,43 @@ export default function TextEditor({ onClose }: TextEditorProps) {
       .filter(sentence => sentence.trim().length > 0);
   };
 
+  // Get paragraph boundaries for sentence list
+  const getParagraphBoundaries = (): Array<{ index: number; isFirst: boolean; isLast: boolean }> => {
+    const paragraphs = getCurrentParagraphs();
+    const boundaries: Array<{ index: number; isFirst: boolean; isLast: boolean }> = [];
+    let globalIndex = 0;
+
+    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+      const paraSentences = paragraphs[pIndex]
+        .split(/([.!?]+)\s*/)
+        .filter((part, index, arr) => {
+          return part.trim() !== '' || (index > 0 && index % 2 === 1);
+        })
+        .reduce((acc: string[], part, index) => {
+          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
+            const lastText = acc.pop() || '';
+            acc.push(lastText + part);
+          } else if (part.trim()) {
+            acc.push(part);
+          }
+          return acc;
+        }, [])
+        .filter(sentence => sentence.trim().length > 0);
+
+      for (let sIndex = 0; sIndex < paraSentences.length; sIndex++) {
+        boundaries.push({
+          index: globalIndex + sIndex,
+          isFirst: sIndex === 0,
+          isLast: sIndex === paraSentences.length - 1
+        });
+      }
+
+      globalIndex += paraSentences.length;
+    }
+
+    return boundaries;
+  };
+
   // Initialize with current record text
   useEffect(() => {
     if (currentRecord?.ocr_text) {
@@ -282,6 +319,233 @@ export default function TextEditor({ onClose }: TextEditorProps) {
     toast.info('已重置为原始文本');
   }
 
+  function handleDeleteSentence(index: number) {
+    const paragraphs = getCurrentParagraphs();
+    
+    // Find which paragraph contains the sentence
+    let currentGlobalIndex = 0;
+    let targetParaIndex = -1;
+    
+    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+      const paraSentences = paragraphs[pIndex]
+        .split(/([.!?]+)\s*/)
+        .filter((part, index, arr) => {
+          return part.trim() !== '' || (index > 0 && index % 2 === 1);
+        })
+        .reduce((acc: string[], part, index) => {
+          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
+            const lastText = acc.pop() || '';
+            acc.push(lastText + part);
+          } else if (part.trim()) {
+            acc.push(part);
+          }
+          return acc;
+        }, [])
+        .filter(sentence => sentence.trim().length > 0);
+      
+      if (currentGlobalIndex + paraSentences.length > index) {
+        targetParaIndex = pIndex;
+        break;
+      }
+      currentGlobalIndex += paraSentences.length;
+    }
+    
+    if (targetParaIndex !== -1) {
+      const paraSentences = paragraphs[targetParaIndex]
+        .split(/([.!?]+)\s*/)
+        .filter((part, index, arr) => {
+          return part.trim() !== '' || (index > 0 && index % 2 === 1);
+        })
+        .reduce((acc: string[], part, index) => {
+          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
+            const lastText = acc.pop() || '';
+            acc.push(lastText + part);
+          } else if (part.trim()) {
+            acc.push(part);
+          }
+          return acc;
+        }, [])
+        .filter(sentence => sentence.trim().length > 0);
+      
+      const sentenceIndexInPara = index - currentGlobalIndex;
+      paraSentences.splice(sentenceIndexInPara, 1);
+      
+      const updatedPara = paraSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
+      
+      const updatedParagraphs = [...paragraphs];
+      if (updatedPara) {
+        updatedParagraphs[targetParaIndex] = updatedPara;
+      } else {
+        updatedParagraphs.splice(targetParaIndex, 1);
+      }
+      
+      const newFullText = joinParagraphs(updatedParagraphs);
+      handleTextChange(newFullText);
+      toast.info('句子已删除（保存后生效）');
+    }
+  }
+
+  function handleInsertBefore(index: number) {
+    const paragraphs = getCurrentParagraphs();
+    
+    // Find which paragraph contains the sentence
+    let currentGlobalIndex = 0;
+    let targetParaIndex = -1;
+    
+    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+      const paraSentences = paragraphs[pIndex]
+        .split(/([.!?]+)\s*/)
+        .filter((part, index, arr) => {
+          return part.trim() !== '' || (index > 0 && index % 2 === 1);
+        })
+        .reduce((acc: string[], part, index) => {
+          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
+            const lastText = acc.pop() || '';
+            acc.push(lastText + part);
+          } else if (part.trim()) {
+            acc.push(part);
+          }
+          return acc;
+        }, [])
+        .filter(sentence => sentence.trim().length > 0);
+      
+      if (currentGlobalIndex + paraSentences.length > index) {
+        targetParaIndex = pIndex;
+        break;
+      }
+      currentGlobalIndex += paraSentences.length;
+    }
+    
+    if (targetParaIndex !== -1) {
+      // Insert new paragraph before the target paragraph
+      const updatedParagraphs = [...paragraphs];
+      updatedParagraphs.splice(targetParaIndex, 0, 'New sentence.');
+      
+      const newFullText = joinParagraphs(updatedParagraphs);
+      handleTextChange(newFullText);
+      
+      toast.info('新段落已插入');
+    }
+  }
+
+  function handleInsertAfter(index: number) {
+    const paragraphs = getCurrentParagraphs();
+    
+    // Find which paragraph contains the sentence
+    let currentGlobalIndex = 0;
+    let targetParaIndex = -1;
+    
+    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+      const paraSentences = paragraphs[pIndex]
+        .split(/([.!?]+)\s*/)
+        .filter((part, index, arr) => {
+          return part.trim() !== '' || (index > 0 && index % 2 === 1);
+        })
+        .reduce((acc: string[], part, index) => {
+          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
+            const lastText = acc.pop() || '';
+            acc.push(lastText + part);
+          } else if (part.trim()) {
+            acc.push(part);
+          }
+          return acc;
+        }, [])
+        .filter(sentence => sentence.trim().length > 0);
+      
+      if (currentGlobalIndex + paraSentences.length > index) {
+        targetParaIndex = pIndex;
+        break;
+      }
+      currentGlobalIndex += paraSentences.length;
+    }
+    
+    if (targetParaIndex !== -1) {
+      // Insert new paragraph after the target paragraph
+      const updatedParagraphs = [...paragraphs];
+      updatedParagraphs.splice(targetParaIndex + 1, 0, 'New sentence.');
+      
+      const newFullText = joinParagraphs(updatedParagraphs);
+      handleTextChange(newFullText);
+      
+      toast.info('新段落已插入');
+    }
+  }
+
+  function handleSplitSentence(index: number) {
+    const paragraphs = getCurrentParagraphs();
+    const sentences = getCurrentSentences();
+    const sentence = sentences[index];
+    
+    if (!sentence) return;
+    
+    const midPoint = Math.floor(sentence.length / 2);
+    const firstPart = sentence.substring(0, midPoint).trim();
+    const secondPart = sentence.substring(midPoint).trim();
+    
+    if (!firstPart || !secondPart) {
+      toast.error('句子太短，无法拆分');
+      return;
+    }
+    
+    // Find which paragraph contains the sentence
+    let currentGlobalIndex = 0;
+    let targetParaIndex = -1;
+    
+    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+      const paraSentences = paragraphs[pIndex]
+        .split(/([.!?]+)\s*/)
+        .filter((part, index, arr) => {
+          return part.trim() !== '' || (index > 0 && index % 2 === 1);
+        })
+        .reduce((acc: string[], part, index) => {
+          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
+            const lastText = acc.pop() || '';
+            acc.push(lastText + part);
+          } else if (part.trim()) {
+            acc.push(part);
+          }
+          return acc;
+        }, [])
+        .filter(sentence => sentence.trim().length > 0);
+      
+      if (currentGlobalIndex + paraSentences.length > index) {
+        targetParaIndex = pIndex;
+        break;
+      }
+      currentGlobalIndex += paraSentences.length;
+    }
+    
+    if (targetParaIndex !== -1) {
+      const paraSentences = paragraphs[targetParaIndex]
+        .split(/([.!?]+)\s*/)
+        .filter((part, index, arr) => {
+          return part.trim() !== '' || (index > 0 && index % 2 === 1);
+        })
+        .reduce((acc: string[], part, index) => {
+          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
+            const lastText = acc.pop() || '';
+            acc.push(lastText + part);
+          } else if (part.trim()) {
+            acc.push(part);
+          }
+          return acc;
+        }, [])
+        .filter(sentence => sentence.trim().length > 0);
+      
+      const sentenceIndexInPara = index - currentGlobalIndex;
+      paraSentences.splice(sentenceIndexInPara, 1, firstPart, secondPart);
+      
+      const updatedPara = paraSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
+      
+      const updatedParagraphs = [...paragraphs];
+      updatedParagraphs[targetParaIndex] = updatedPara;
+      
+      const newFullText = joinParagraphs(updatedParagraphs);
+      handleTextChange(newFullText);
+      toast.info('句子已拆分（保存后生效）');
+    }
+  }
+
   function handleConfirmClose() {
     if (hasUnsavedUserChanges()) {
       setShowConfirmDialog(true);
@@ -302,6 +566,7 @@ export default function TextEditor({ onClose }: TextEditorProps) {
   if (!currentRecord) return null;
 
   const sentences = getCurrentSentences();
+  const paragraphBoundaries = getParagraphBoundaries();
 
   return (
     <div className="flex flex-col h-full">
@@ -360,6 +625,11 @@ export default function TextEditor({ onClose }: TextEditorProps) {
           sentences={sentences}
           modifiedSentences={modifiedSentences}
           onEdit={handleSentenceEdit}
+          onDelete={handleDeleteSentence}
+          onInsertBefore={handleInsertBefore}
+          onInsertAfter={handleInsertAfter}
+          onSplit={handleSplitSentence}
+          paragraphBoundaries={paragraphBoundaries}
         />
       </div>
 

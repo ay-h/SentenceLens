@@ -234,6 +234,62 @@ export async function getRecordQuality(
   return request(`/api/records/${recordId}/quality`);
 }
 
+// ==================== Sentence Editing ====================
+
+export async function deleteSentence(
+  sentenceId: string,
+): Promise<{ success: boolean; message: string; sentence_id: string; record_id: number }> {
+  return request(`/api/sentences/${sentenceId}`, { method: 'DELETE' });
+}
+
+export async function insertSentence(
+  recordId: number,
+  text: string,
+  targetSentenceId: string,
+  position: 'before' | 'after',
+  newParagraph: boolean,
+): Promise<{
+  success: boolean;
+  message: string;
+  sentence: { id: string; text: string; paragraph_index: number; sentence_index: number };
+  record_id: number;
+}> {
+  return request('/api/sentences/insert', {
+    method: 'POST',
+    body: JSON.stringify({
+      record_id: recordId,
+      text: text,
+      target_sentence_id: targetSentenceId,
+      position: position,
+      new_paragraph: newParagraph,
+    }),
+  });
+}
+
+export async function splitSentence(
+  sentenceId: string,
+  splitPosition: number,
+  newParagraph: boolean,
+): Promise<{
+  success: boolean;
+  message: string;
+  sentences: Array<{
+    id: string;
+    text: string;
+    paragraph_index: number;
+    sentence_index: number;
+  }>;
+  record_id: number;
+}> {
+  return request(`/api/sentences/${sentenceId}/split`, {
+    method: 'POST',
+    body: JSON.stringify({
+      split_position: splitPosition,
+      new_paragraph: newParagraph,
+    }),
+  });
+}
+
 // ==================== Word Lookup ====================
 
 export async function lookupWord(

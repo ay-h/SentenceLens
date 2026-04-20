@@ -19,6 +19,7 @@ export interface Sentence {
   text: string;
   index: number;
   paragraph_index: number;
+  sentence_index?: number;
 }
 
 export interface SentenceAnalysis {

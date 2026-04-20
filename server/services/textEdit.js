@@ -357,21 +357,52 @@ class TextEditService {
     try {
       console.log(`Syncing sentences to database: 记录 ${recordId}`);
 
-      // Delete all existing sentences for this record
-      deleteSentencesByRecord(recordId);
+      // Get existing sentences from database
+      const existingSentences = getSentencesByRecord(recordId);
+      const existingSentencesMap = new Map();
+      existingSentences.forEach(s => {
+        existingSentencesMap.set(s.id, s);
+      });
 
-      // Insert new sentences with their UUIDs
+      // Collect all sentence IDs that should exist after sync
+      const newSentenceIds = new Set();
       let sentenceIndex = 0;
       for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
         const paragraph = paragraphs[pIndex];
         for (const sentence of paragraph) {
-          createSentence(
-            recordId,
-            sentence.text,
-            pIndex,
-            sentenceIndex++,
-            sentence.id
-          );
+          newSentenceIds.add(sentence.id);
+          sentenceIndex++;
+        }
+      }
+
+      // Delete sentences that no longer exist
+      for (const existingSentence of existingSentences) {
+        if (!newSentenceIds.has(existingSentence.id)) {
+          deleteSentence(existingSentence.id);
+        }
+      }
+
+      // Insert or update sentences based on ID
+      sentenceIndex = 0;
+      for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+        const paragraph = paragraphs[pIndex];
+        for (const sentence of paragraph) {
+          const existing = existingSentencesMap.get(sentence.id);
+          
+          if (existing) {
+            // Update existing sentence
+            updateSentenceText(sentence.id, sentence.text, pIndex, sentenceIndex);
+          } else {
+            // Create new sentence
+            createSentence(
+              recordId,
+              sentence.text,
+              pIndex,
+              sentenceIndex,
+              sentence.id
+            );
+          }
+          sentenceIndex++;
         }
       }
 
