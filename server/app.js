@@ -20,8 +20,6 @@ const { splitSentences, splitParagraphs, cleanSentence } = require('./services/s
 const db = require('./models/database');
 
 // Initialize services
-const TextEditService = require('./services/textEdit');
-const textEditService = new TextEditService(db);
 const TranslationService = require('./services/translation');
 const translationService = new TranslationService(db, llmService);
 
@@ -201,11 +199,19 @@ app.get('/api/sessions/:id/records', (req, res) => {
 
 app.get('/api/records/:id', (req, res) => {
   try {
-    const record = db.getRecordWithAnalyses(parseInt(req.params.id));
+    const recordId = parseInt(req.params.id);
+    const record = db.getRecordWithAnalyses(recordId);
     if (!record) {
       return res.status(404).json({ detail: 'Record not found' });
     }
-    res.json(record);
+
+    // Rebuild text from sentences
+    const ocrText = db.rebuildTextFromSentences(recordId);
+
+    res.json({
+      ...record,
+      ocr_text: ocrText
+    });
   } catch (error) {
     res.status(500).json({ detail: error.message });
   }
@@ -214,69 +220,30 @@ app.get('/api/records/:id', (req, res) => {
 app.get('/api/records/:id/sentences', (req, res) => {
   try {
     const recordId = parseInt(req.params.id);
-    const record = db.getRecord(recordId);
-    if (!record) {
-      return res.status(404).json({ detail: 'Record not found' });
+    
+    // Get sentences from database
+    const dbSentences = db.getSentencesByRecord(recordId);
+    if (!dbSentences || dbSentences.length === 0) {
+      return res.json({ sentences: [], paragraphs: [] });
     }
 
-    // Try to get sentences from database first
-    let dbSentences = [];
-    try {
-      dbSentences = db.getSentencesByRecord(recordId);
-    } catch (error) {
-      console.log('No sentences in database yet, will generate');
-    }
-
-    let sentences = [];
-    let paragraphs = [];
-
-    if (dbSentences.length > 0) {
-      // Use persisted sentences from database
-      sentences = dbSentences.map((s, idx) => ({
-        id: s.id,
-        text: s.text,
-        index: idx,
-        paragraph_index: s.paragraph_index
-      }));
-
-      // Group by paragraph_index for paragraphs
-      const grouped = {};
-      for (const s of sentences) {
-        const pIndex = s.paragraph_index || 0;
-        if (!grouped[pIndex]) {
-          grouped[pIndex] = [];
-        }
-        grouped[pIndex].push(s.text);
+    // Group by paragraph_index
+    const grouped = {};
+    for (const s of dbSentences) {
+      const pIndex = s.paragraph_index || 0;
+      if (!grouped[pIndex]) {
+        grouped[pIndex] = [];
       }
-      paragraphs = Object.keys(grouped)
-        .map(Number)
-        .sort((a, b) => a - b)
-        .map(pIndex => grouped[pIndex]);
-    } else {
-      // No persisted sentences yet, generate from ocr_text
-      const generatedParagraphs = splitParagraphs(record.ocr_text, recordId, db);
-      paragraphs = generatedParagraphs.map(p => p.map(s => s.text));
-
-      let globalIndex = 0;
-      for (let pIndex = 0; pIndex < generatedParagraphs.length; pIndex++) {
-        const paragraphSentences = generatedParagraphs[pIndex].map(s => {
-          const cleaned = cleanSentence(s.text);
-          return {
-            id: s.id,
-            text: cleaned,
-            index: globalIndex,
-            paragraph_index: pIndex
-          };
-        }).filter(s => s.text);
-
-        for (const sentence of paragraphSentences) {
-          sentences.push(sentence);
-          globalIndex++;
-        }
-      }
+      grouped[pIndex].push(s);
     }
 
-    res.json({ sentences, paragraphs });
+    // Sort by paragraph_index and sentence_index
+    const paragraphs = Object.keys(grouped)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map(pIndex => grouped[pIndex].sort((a, b) => a.sentence_index - b.sentence_index));
+
+    res.json({ sentences: dbSentences, paragraphs });
   } catch (error) {
     res.status(500).json({ detail: error.message });
   }
@@ -296,22 +263,298 @@ app.put('/api/records/:id/name', (req, res) => {
   }
 });
 
+// ==================== UUID-based Sentence Operations ====================
+
 /**
- * Edit record text - detect changes and clear related translations/analyses
+ * Edit sentence by UUID
+ * PUT /api/sentences/:id
+ * Body: { text: "new sentence content" }
  */
-app.put('/api/records/:id/text/edit', async (req, res) => {
+app.put('/api/sentences/:id', (req, res) => {
   try {
-    const recordId = parseInt(req.params.id);
+    const sentenceId = req.params.id;
     const { text } = req.body;
 
-    if (!text) {
+    if (!text || !text.trim()) {
       return res.status(400).json({ detail: 'Text is required' });
     }
 
-    const result = await textEditService.handleTextEdit(recordId, text);
-    res.json(result);
+    // Get the sentence
+    const sentence = db.getSentenceById(sentenceId);
+    if (!sentence) {
+      return res.status(404).json({ detail: 'Sentence not found' });
+    }
+
+    // Update sentence text
+    db.updateSentenceText(sentenceId, text, sentence.paragraph_index, sentence.sentence_index);
+
+    // Set is_modified flag
+    db.execute(
+      'UPDATE sentences SET is_modified = 1 WHERE id = ?',
+      [sentenceId]
+    );
+
+    // Clear translations and analyses for this sentence
+    db.execute('DELETE FROM sentence_translations WHERE sentence_id = ?', [sentenceId]);
+    db.execute('DELETE FROM sentence_analyses WHERE sentence_id = ?', [sentenceId]);
+
+    console.log(`Sentence updated: ${sentenceId}`);
+
+    res.json({
+      success: true,
+      message: 'Sentence updated',
+      sentence: db.getSentenceById(sentenceId)
+    });
   } catch (error) {
-    console.error('Text edit error:', error);
+    console.error('Sentence edit error:', error);
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+/**
+ * Delete sentence by UUID
+ * DELETE /api/sentences/:id
+ */
+app.delete('/api/sentences/:id', (req, res) => {
+  try {
+    const sentenceId = req.params.id;
+
+    // Get the sentence
+    const sentence = db.getSentenceById(sentenceId);
+    if (!sentence) {
+      return res.status(404).json({ detail: 'Sentence not found' });
+    }
+
+    const recordId = sentence.record_id;
+    const paragraphIndex = sentence.paragraph_index;
+    const sentenceIndex = sentence.sentence_index;
+
+    // Delete the sentence
+    db.deleteSentence(sentenceId);
+
+    // Update sentence_index for remaining sentences in the same paragraph
+    const sentences = db.getSentencesByRecord(recordId);
+    const paragraphSentences = sentences
+      .filter(s => s.paragraph_index === paragraphIndex && s.sentence_index > sentenceIndex)
+      .sort((a, b) => a.sentence_index - b.sentence_index);
+
+    for (const s of paragraphSentences) {
+      db.execute('UPDATE sentences SET sentence_index = sentence_index - 1 WHERE id = ?', [s.id]);
+    }
+
+    console.log(`Sentence deleted: ${sentenceId}`);
+
+    res.json({
+      success: true,
+      message: 'Sentence deleted',
+      sentences: db.getSentencesByRecord(recordId)
+    });
+  } catch (error) {
+    console.error('Sentence delete error:', error);
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+/**
+ * Insert sentence by UUID
+ * POST /api/sentences/insert
+ * Body: { record_id, text, target_sentence_id, position: "before" | "after", new_paragraph: boolean }
+ */
+app.post('/api/sentences/insert', (req, res) => {
+  try {
+    const { record_id, text, target_sentence_id, position = 'after', new_paragraph = false } = req.body;
+
+    if (!record_id || !text || !target_sentence_id) {
+      return res.status(400).json({ detail: 'record_id, text, and target_sentence_id are required' });
+    }
+
+    if (position !== 'before' && position !== 'after') {
+      return res.status(400).json({ detail: 'position must be "before" or "after"' });
+    }
+
+    // Get target sentence
+    const targetSentence = db.getSentenceById(target_sentence_id);
+    if (!targetSentence) {
+      return res.status(404).json({ detail: 'Target sentence not found' });
+    }
+
+    const paragraph_index = targetSentence.paragraph_index;
+    const sentence_index = targetSentence.sentence_index;
+
+    // Generate new UUID
+    const { generateUUID } = require('./services/sentenceSplit');
+    const newSentenceId = generateUUID();
+
+    // Calculate new paragraph index and sentence index
+    let newParagraphIndex = paragraph_index;
+    let newSentenceIndex = sentence_index;
+
+    // Handle paragraph reindexing if opening new paragraph
+    if (new_paragraph) {
+      if (position === 'before') {
+        // Insert before current paragraph - shift all paragraphs down
+        newParagraphIndex = paragraph_index;
+        const sentences = db.getSentencesByRecord(record_id);
+        const affectedParagraphs = sentences
+          .filter(s => s.paragraph_index >= paragraph_index)
+          .map(s => s.id);
+
+        for (const sentenceId of affectedParagraphs) {
+          db.execute('UPDATE sentences SET paragraph_index = paragraph_index + 1 WHERE id = ?', [sentenceId]);
+        }
+      } else {
+        // Insert after current paragraph - shift paragraphs after current one down
+        newParagraphIndex = paragraph_index + 1;
+        const sentences = db.getSentencesByRecord(record_id);
+        const affectedParagraphs = sentences
+          .filter(s => s.paragraph_index > paragraph_index)
+          .map(s => s.id);
+
+        for (const sId of affectedParagraphs) {
+          db.execute('UPDATE sentences SET paragraph_index = paragraph_index + 1 WHERE id = ?', [sId]);
+        }
+      }
+      newSentenceIndex = 0;
+    } else {
+      // Calculate new sentence index
+      if (position === 'before') {
+        newSentenceIndex = sentence_index;
+        // Update existing sentences in the same paragraph
+        const sentences = db.getSentencesByRecord(record_id);
+        const affectedSentences = sentences
+          .filter(s => s.paragraph_index === newParagraphIndex && s.sentence_index >= sentence_index)
+          .sort((a, b) => b.sentence_index - a.sentence_index); // Sort descending to update from end
+
+        for (const s of affectedSentences) {
+          db.execute('UPDATE sentences SET sentence_index = sentence_index + 1 WHERE id = ?', [s.id]);
+        }
+      } else {
+        newSentenceIndex = sentence_index + 1;
+        // Update existing sentences in the same paragraph
+        const sentences = db.getSentencesByRecord(record_id);
+        const affectedSentences = sentences
+          .filter(s => s.paragraph_index === newParagraphIndex && s.sentence_index > sentence_index)
+          .sort((a, b) => b.sentence_index - a.sentence_index);
+
+        for (const s of affectedSentences) {
+          db.execute('UPDATE sentences SET sentence_index = sentence_index + 1 WHERE id = ?', [s.id]);
+        }
+      }
+    }
+
+    // Create the new sentence
+    db.createSentence(record_id, text, newParagraphIndex, newSentenceIndex, newSentenceId);
+
+    // Set is_modified flag
+    db.execute(
+      'UPDATE sentences SET is_modified = 1 WHERE id = ?',
+      [newSentenceId]
+    );
+
+    console.log(`Sentence inserted: ${newSentenceId}`);
+
+    res.json({
+      success: true,
+      message: 'Sentence inserted',
+      sentences: db.getSentencesByRecord(record_id)
+    });
+  } catch (error) {
+    console.error('Sentence insert error:', error);
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+/**
+ * Split sentence by UUID
+ * POST /api/sentences/:id/split
+ * Body: { split_position, new_paragraph }
+ */
+app.post('/api/sentences/:id/split', (req, res) => {
+  try {
+    const sentenceId = req.params.id;
+    const { split_position, new_paragraph = false } = req.body;
+
+    if (split_position === undefined || split_position === null) {
+      return res.status(400).json({ detail: 'split_position is required' });
+    }
+
+    // Get the sentence
+    const sentence = db.getSentenceById(sentenceId);
+    if (!sentence) {
+      return res.status(404).json({ detail: 'Sentence not found' });
+    }
+
+    const text = sentence.text;
+    if (split_position <= 0 || split_position >= text.length) {
+      return res.status(400).json({ detail: 'split_position must be between 0 and text length' });
+    }
+
+    const record_id = sentence.record_id;
+    const paragraph_index = sentence.paragraph_index;
+    const sentence_index = sentence.sentence_index;
+
+    // Split the text
+    const firstPart = text.substring(0, split_position).trim();
+    const secondPart = text.substring(split_position).trim();
+
+    if (!firstPart || !secondPart) {
+      return res.status(400).json({ detail: 'Both parts must have content after split' });
+    }
+
+    // Generate new UUIDs
+    const { generateUUID } = require('./services/sentenceSplit');
+    const firstPartId = generateUUID();
+    const secondPartId = generateUUID();
+
+    // Handle paragraph assignment for second part
+    let secondParagraphIndex = paragraph_index;
+    if (new_paragraph) {
+      secondParagraphIndex = paragraph_index + 1;
+      // Shift all paragraphs after current one down
+      const sentences = db.getSentencesByRecord(record_id);
+      const affectedParagraphs = sentences
+        .filter(s => s.paragraph_index > paragraph_index)
+        .map(s => s.id);
+
+      for (const sId of affectedParagraphs) {
+        db.execute('UPDATE sentences SET paragraph_index = paragraph_index + 1 WHERE id = ?', [sId]);
+      }
+    }
+
+    // Update sentence_index for sentences after the original
+    const sentences = db.getSentencesByRecord(record_id);
+    const affectedSentences = sentences
+      .filter(s => s.paragraph_index === paragraph_index && s.sentence_index > sentence_index)
+      .sort((a, b) => b.sentence_index - a.sentence_index);
+
+    for (const s of affectedSentences) {
+      db.execute('UPDATE sentences SET sentence_index = sentence_index + 1 WHERE id = ?', [s.id]);
+    }
+
+    // Delete the original sentence
+    db.deleteSentence(sentenceId);
+
+    // Create the two new sentences
+    db.createSentence(record_id, firstPart, paragraph_index, sentence_index, firstPartId);
+    db.createSentence(record_id, secondPart, secondParagraphIndex, sentence_index + 1, secondPartId);
+
+    // Set is_modified flag for both new sentences
+    db.execute('UPDATE sentences SET is_modified = 1 WHERE id = ?', [firstPartId]);
+    db.execute('UPDATE sentences SET is_modified = 1 WHERE id = ?', [secondPartId]);
+
+    // Clear translations and analyses for the original sentence
+    db.execute('DELETE FROM sentence_translations WHERE sentence_id = ?', [sentenceId]);
+    db.execute('DELETE FROM sentence_analyses WHERE sentence_id = ?', [sentenceId]);
+
+    console.log(`Sentence split: ${sentenceId} -> ${firstPartId}, ${secondPartId}`);
+
+    res.json({
+      success: true,
+      message: 'Sentence split',
+      sentences: db.getSentencesByRecord(record_id)
+    });
+  } catch (error) {
+    console.error('Sentence split error:', error);
     res.status(500).json({ detail: error.message });
   }
 });
@@ -338,308 +581,7 @@ app.post('/api/records/:id/translate', async (req, res) => {
   }
 });
 
-/**
- * Delete a sentence
- */
-app.delete('/api/sentences/:id', async (req, res) => {
-  try {
-    const sentenceId = req.params.id;
-
-    // Get the sentence to delete
-    const sentence = db.getSentenceById(sentenceId);
-    if (!sentence) {
-      return res.status(404).json({ detail: 'Sentence not found' });
-    }
-
-    const recordId = sentence.record_id;
-    const paragraphIndex = sentence.paragraph_index;
-    const sentenceIndex = sentence.sentence_index;
-
-    // Delete the sentence
-    db.deleteSentence(sentenceId);
-
-    // Clear translations and analyses for this sentence
-    execute('DELETE FROM sentence_translations WHERE sentence_id = ?', [sentenceId]);
-    execute('DELETE FROM sentence_analyses WHERE sentence_id = ?', [sentenceId]);
-
-    // Update sentence_index for remaining sentences in the same paragraph
-    const sentences = db.getSentencesByRecord(recordId);
-    const paragraphSentences = sentences
-      .filter(s => s.paragraph_index === paragraphIndex && s.sentence_index > sentenceIndex)
-      .sort((a, b) => a.sentence_index - b.sentence_index);
-
-    for (const s of paragraphSentences) {
-      execute('UPDATE sentences SET sentence_index = sentence_index - 1 WHERE id = ?', [s.id]);
-    }
-
-    // Rebuild ocr_text from remaining sentences
-    const updatedSentences = db.getSentencesByRecord(recordId);
-    const grouped = {};
-    for (const s of updatedSentences) {
-      const pIndex = s.paragraph_index || 0;
-      if (!grouped[pIndex]) {
-        grouped[pIndex] = [];
-      }
-      grouped[pIndex].push(s);
-    }
-
-    const paragraphs = Object.keys(grouped)
-      .map(Number)
-      .sort((a, b) => a - b)
-      .map(pIndex => grouped[pIndex].map(s => s.text).join(' '));
-
-    const newOcrText = paragraphs.join('\n');
-
-    // Update record's ocr_text
-    execute('UPDATE records SET ocr_text = ? WHERE id = ?', [newOcrText, recordId]);
-
-    res.json({
-      success: true,
-      message: 'Sentence deleted successfully',
-      sentence_id: sentenceId,
-      record_id: recordId
-    });
-  } catch (error) {
-    console.error('Delete sentence error:', error);
-    res.status(500).json({ detail: error.message });
-  }
-});
-
-/**
- * Insert a sentence
- */
-app.post('/api/sentences/insert', async (req, res) => {
-  try {
-    const { record_id, text, target_sentence_id, position, new_paragraph } = req.body;
-
-    if (!record_id || !text || !target_sentence_id || !position) {
-      return res.status(400).json({ detail: 'Missing required fields' });
-    }
-
-    if (position !== 'before' && position !== 'after') {
-      return res.status(400).json({ detail: 'Invalid position, must be "before" or "after"' });
-    }
-
-    // Get the target sentence
-    const targetSentence = db.getSentenceById(target_sentence_id);
-    if (!targetSentence) {
-      return res.status(404).json({ detail: 'Target sentence not found' });
-    }
-
-    const { paragraph_index, sentence_index } = targetSentence;
-    let newParagraphIndex = paragraph_index;
-
-    // Handle paragraph reindexing if opening new paragraph
-    if (new_paragraph) {
-      if (position === 'before') {
-        // Insert before current paragraph - shift all paragraphs down
-        newParagraphIndex = paragraph_index;
-        const sentences = db.getSentencesByRecord(record_id);
-        const affectedParagraphs = sentences
-          .filter(s => s.paragraph_index >= paragraph_index)
-          .map(s => s.id);
-
-        for (const sentenceId of affectedParagraphs) {
-          execute('UPDATE sentences SET paragraph_index = paragraph_index + 1 WHERE id = ?', [sentenceId]);
-        }
-      } else {
-        // Insert after current paragraph - use next paragraph index
-        newParagraphIndex = paragraph_index + 1;
-      }
-    }
-
-    // Calculate new sentence index
-    let newSentenceIndex;
-    if (position === 'before') {
-      newSentenceIndex = sentence_index;
-      // Update existing sentences in the same paragraph
-      const sentences = db.getSentencesByRecord(record_id);
-      const affectedSentences = sentences
-        .filter(s => s.paragraph_index === newParagraphIndex && s.sentence_index >= sentence_index)
-        .sort((a, b) => b.sentence_index - a.sentence_index); // Sort descending to update from end
-
-      for (const s of affectedSentences) {
-        execute('UPDATE sentences SET sentence_index = sentence_index + 1 WHERE id = ?', [s.id]);
-      }
-    } else {
-      newSentenceIndex = sentence_index + 1;
-      // Update existing sentences in the same paragraph
-      const sentences = db.getSentencesByRecord(record_id);
-      const affectedSentences = sentences
-        .filter(s => s.paragraph_index === newParagraphIndex && s.sentence_index > sentence_index)
-        .sort((a, b) => b.sentence_index - a.sentence_index); // Sort descending to update from end
-
-      for (const s of affectedSentences) {
-        execute('UPDATE sentences SET sentence_index = sentence_index + 1 WHERE id = ?', [s.id]);
-      }
-    }
-
-    // Generate new UUID for the sentence
-    const { generateUUID } = require('./services/sentenceSplit');
-    const newSentenceId = generateUUID();
-
-    // Create the new sentence
-    db.createSentence(record_id, text, newParagraphIndex, newSentenceIndex, newSentenceId);
-
-    // Rebuild ocr_text from all sentences
-    const updatedSentences = db.getSentencesByRecord(record_id);
-    const grouped = {};
-    for (const s of updatedSentences) {
-      const pIndex = s.paragraph_index || 0;
-      if (!grouped[pIndex]) {
-        grouped[pIndex] = [];
-      }
-      grouped[pIndex].push(s);
-    }
-
-    const paragraphs = Object.keys(grouped)
-      .map(Number)
-      .sort((a, b) => a - b)
-      .map(pIndex => grouped[pIndex].sort((a, b) => a.sentence_index - b.sentence_index).map(s => s.text).join(' '));
-
-    const newOcrText = paragraphs.join('\n');
-
-    // Update record's ocr_text
-    execute('UPDATE records SET ocr_text = ? WHERE id = ?', [newOcrText, record_id]);
-
-    res.json({
-      success: true,
-      message: 'Sentence inserted successfully',
-      sentence: {
-        id: newSentenceId,
-        text: text,
-        paragraph_index: newParagraphIndex,
-        sentence_index: newSentenceIndex
-      },
-      record_id: record_id
-    });
-  } catch (error) {
-    console.error('Insert sentence error:', error);
-    res.status(500).json({ detail: error.message });
-  }
-});
-
-/**
- * Split a sentence into two sentences
- */
-app.post('/api/sentences/:id/split', async (req, res) => {
-  try {
-    const sentenceId = req.params.id;
-    const { split_position, new_paragraph } = req.body;
-
-    if (split_position === undefined || split_position === null) {
-      return res.status(400).json({ detail: 'split_position is required' });
-    }
-
-    // Get the sentence to split
-    const sentence = db.getSentenceById(sentenceId);
-    if (!sentence) {
-      return res.status(404).json({ detail: 'Sentence not found' });
-    }
-
-    const { record_id, text, paragraph_index, sentence_index } = sentence;
-
-    if (split_position <= 0 || split_position >= text.length) {
-      return res.status(400).json({ detail: 'Invalid split position' });
-    }
-
-    // Split the text
-    const firstPart = text.substring(0, split_position).trim();
-    const secondPart = text.substring(split_position).trim();
-
-    if (!firstPart || !secondPart) {
-      return res.status(400).json({ detail: 'Split results in empty sentence' });
-    }
-
-    // Delete the original sentence and its translations/analyses
-    db.deleteSentence(sentenceId);
-    execute('DELETE FROM sentence_translations WHERE sentence_id = ?', [sentenceId]);
-    execute('DELETE FROM sentence_analyses WHERE sentence_id = ?', [sentenceId]);
-
-    // Generate new UUIDs for both parts
-    const { generateUUID } = require('./services/sentenceSplit');
-    const firstPartId = generateUUID();
-    const secondPartId = generateUUID();
-
-    let secondParagraphIndex = paragraph_index;
-
-    // Handle paragraph assignment for second part
-    if (new_paragraph) {
-      secondParagraphIndex = paragraph_index + 1;
-      // Shift all paragraphs after current one down
-      const sentences = db.getSentencesByRecord(record_id);
-      const affectedParagraphs = sentences
-        .filter(s => s.paragraph_index > paragraph_index)
-        .map(s => s.id);
-
-      for (const sId of affectedParagraphs) {
-        execute('UPDATE sentences SET paragraph_index = paragraph_index + 1 WHERE id = ?', [sId]);
-      }
-    }
-
-    // Update sentence_index for sentences after the original
-    const sentences = db.getSentencesByRecord(record_id);
-    const affectedSentences = sentences
-      .filter(s => s.paragraph_index === paragraph_index && s.sentence_index > sentence_index)
-      .sort((a, b) => b.sentence_index - a.sentence_index);
-
-    for (const s of affectedSentences) {
-      execute('UPDATE sentences SET sentence_index = sentence_index + 1 WHERE id = ?', [s.id]);
-    }
-
-    // Create the two new sentences
-    db.createSentence(record_id, firstPart, paragraph_index, sentence_index, firstPartId);
-    db.createSentence(record_id, secondPart, secondParagraphIndex, sentence_index + 1, secondPartId);
-
-    // Rebuild ocr_text from all sentences
-    const updatedSentences = db.getSentencesByRecord(record_id);
-    const grouped = {};
-    for (const s of updatedSentences) {
-      const pIndex = s.paragraph_index || 0;
-      if (!grouped[pIndex]) {
-        grouped[pIndex] = [];
-      }
-      grouped[pIndex].push(s);
-    }
-
-    const paragraphs = Object.keys(grouped)
-      .map(Number)
-      .sort((a, b) => a - b)
-      .map(pIndex => grouped[pIndex].sort((a, b) => a.sentence_index - b.sentence_index).map(s => s.text).join(' '));
-
-    const newOcrText = paragraphs.join('\n');
-
-    // Update record's ocr_text
-    execute('UPDATE records SET ocr_text = ? WHERE id = ?', [newOcrText, record_id]);
-
-    res.json({
-      success: true,
-      message: 'Sentence split successfully',
-      sentences: [
-        {
-          id: firstPartId,
-          text: firstPart,
-          paragraph_index: paragraph_index,
-          sentence_index: sentence_index
-        },
-        {
-          id: secondPartId,
-          text: secondPart,
-          paragraph_index: secondParagraphIndex,
-          sentence_index: sentence_index + 1
-        }
-      ],
-      record_id: record_id
-    });
-  } catch (error) {
-    console.error('Split sentence error:', error);
-    res.status(500).json({ detail: error.message });
-  }
-});
-
-/**
- * Get record OCR quality assessment
- */
+// ==================== Analysis Routes ====================
 app.get('/api/records/:id/quality', (req, res) => {
   try {
     const recordId = parseInt(req.params.id);
@@ -715,25 +657,21 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const decodedFilename = decodeFilename(req.file.originalname || '');
     const originalName = path.parse(decodedFilename).name || '未命名图片';
     const recordName = buildDefaultRecordName(name, originalName);
-    const record = db.createRecord(sessionId, recordName, imagePath, ocrText);
+    const record = db.createRecord(sessionId, recordName, imagePath);
 
     // Sync sentences to database for UUID persistence
-    // Check if sentences already exist for this record to avoid duplicates
-    const existingSentences = db.getSentencesByRecord(record.id);
-    if (existingSentences.length === 0) {
-      const paragraphs = splitParagraphs(ocrText, record.id, db);
-      let sentenceIndex = 0;
-      for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
-        const paragraph = paragraphs[pIndex];
-        for (const sentence of paragraph) {
-          db.createSentence(
-            record.id,
-            sentence.text,
-            pIndex,
-            sentenceIndex++,
-            sentence.id
-          );
-        }
+    const paragraphs = splitParagraphs(ocrText);
+    let sentenceIndex = 0;
+    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+      const paragraph = paragraphs[pIndex];
+      for (const sentence of paragraph) {
+        db.createSentence(
+          record.id,
+          sentence.text,
+          pIndex,
+          sentenceIndex++,
+          sentence.id
+        );
       }
     }
 
@@ -742,7 +680,6 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       record_id: record.id,
       session_id: sessionId,
       name: recordName,
-      ocr_text: ocrText,
       sentences,
       image_path: imagePath,
     };
@@ -789,25 +726,21 @@ app.post('/api/text', (req, res) => {
     // Create record
     const imagePath = '/placeholder/text';
     const recordName = buildTextRecordName(name, text);
-    const record = db.createRecord(sessionId, recordName, imagePath, text);
+    const record = db.createRecord(sessionId, recordName, imagePath);
 
     // Sync sentences to database for UUID persistence
-    // Check if sentences already exist for this record to avoid duplicates
-    const existingSentences = db.getSentencesByRecord(record.id);
-    if (existingSentences.length === 0) {
-      const paragraphs = splitParagraphs(text, record.id, db);
-      let sentenceIndex = 0;
-      for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
-        const paragraph = paragraphs[pIndex];
-        for (const sentence of paragraph) {
-          db.createSentence(
-            record.id,
-            sentence.text,
-            pIndex,
-            sentenceIndex++,
-            sentence.id
-          );
-        }
+    const paragraphs = splitParagraphs(text);
+    let sentenceIndex = 0;
+    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+      const paragraph = paragraphs[pIndex];
+      for (const sentence of paragraph) {
+        db.createSentence(
+          record.id,
+          sentence.text,
+          pIndex,
+          sentenceIndex++,
+          sentence.id
+        );
       }
     }
 
@@ -815,7 +748,6 @@ app.post('/api/text', (req, res) => {
       record_id: record.id,
       session_id: sessionId,
       name: recordName,
-      text,
       sentences,
     });
   } catch (error) {

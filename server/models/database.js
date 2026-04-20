@@ -173,6 +173,23 @@ async function runMigrations() {
     console.log('Migration 005: sentence_id column may already exist in sentence_analyses, skipping');
   }
 
+  // Migration 007: Remove ocr_text column from records table
+  try {
+    const recordsColumns = getColumns('records');
+    if (recordsColumns.includes('ocr_text')) {
+      console.log('Migration 007: Dropping ocr_text column from records');
+      // SQLite doesn't support DROP COLUMN directly, need to recreate table
+      db.run(`
+        CREATE TABLE records_new AS SELECT id, session_id, name, image_path, created_at FROM records
+      `);
+      db.run('DROP TABLE records');
+      db.run(`ALTER TABLE records_new RENAME TO records`);
+      db.run('CREATE INDEX IF NOT EXISTS idx_records_session_id ON records(session_id)');
+    }
+  } catch (e) {
+    console.log('Migration 007: ocr_text column may not exist, skipping');
+  }
+
   // Migration 006: Create sentences table to store sentence UUIDs
   try {
     const tables = getTables();
@@ -246,7 +263,6 @@ async function initialize() {
         session_id INTEGER NOT NULL,
         name TEXT NOT NULL DEFAULT '未命名记录',
         image_path TEXT NOT NULL,
-        ocr_text TEXT NOT NULL,
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
@@ -405,10 +421,10 @@ function deleteSession(id) {
  * ==================== Record Operations ====================
  */
 
-function createRecord(sessionId, name, imagePath, ocrText) {
+function createRecord(sessionId, name, imagePath) {
   const result = execute(
-    'INSERT INTO records (session_id, name, image_path, ocr_text) VALUES (?, ?, ?, ?)',
-    [sessionId, name, imagePath, ocrText]
+    'INSERT INTO records (session_id, name, image_path) VALUES (?, ?, ?)',
+    [sessionId, name, imagePath]
   );
   // Update session timestamp
   updateSessionTimestamp(sessionId);
@@ -748,6 +764,38 @@ function createWordDefinition(word, definitionJson, source) {
  * ==================== Utility Functions ====================
  */
 
+/**
+ * Rebuild full text from sentences
+ * @param {string} recordId - Record ID
+ * @returns {string} Reconstructed text
+ */
+function rebuildTextFromSentences(recordId) {
+  const sentences = getSentencesByRecord(recordId);
+  
+  // Group by paragraph_index
+  const grouped = {};
+  for (const s of sentences) {
+    const pIndex = s.paragraph_index || 0;
+    if (!grouped[pIndex]) {
+      grouped[pIndex] = [];
+    }
+    grouped[pIndex].push(s);
+  }
+
+  // Sort by paragraph_index and sentence_index
+  const sortedParagraphs = Object.keys(grouped)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map(pIndex => 
+      grouped[pIndex]
+        .sort((a, b) => a.sentence_index - b.sentence_index)
+        .map(s => s.text)
+        .join(' ')
+    );
+
+  return sortedParagraphs.join('\n');
+}
+
 function close() {
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -794,6 +842,7 @@ module.exports = {
   deleteSentence,
   deleteSentencesByRecord,
   updateSentenceText,
+  rebuildTextFromSentences,
   close,
   getDB,
   queryAll,

@@ -1,553 +1,208 @@
-import { getUnsavedChanges } from '@/api';
-import { ConfirmDialog } from '@/components/Dialog';
-import SentenceList from '@/components/TextEditor/SentenceList';
+import { deleteSentence, editSentence, insertSentence, splitSentence } from '@/api';
+import { getRecordSentences } from '@/api';
+import { ConfirmDialog, Dialog } from '@/components/Dialog';
 import { useApp } from '@/store/AppContext';
-import { Check, Loader2, Save, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Check, Loader2, Plus, Save, Scissors, Trash2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+
+interface Sentence {
+  id: string;
+  text: string;
+  paragraph_index: number;
+  sentence_index: number;
+  is_modified?: number;
+}
 
 interface TextEditorProps {
   onClose?: () => void;
 }
 
 export default function TextEditor({ onClose }: TextEditorProps) {
-  const { currentRecord, handleEditText, fetchCurrentRecord } = useApp();
+  const { currentRecord, fetchCurrentRecord } = useApp();
 
-  const [editingText, setEditingText] = useState('');
-  const [originalText, setOriginalText] = useState('');
-  const [hasChanges, setHasChanges] = useState(false);
-  const [isCheckingChanges, setIsCheckingChanges] = useState(false);
+  const [sentences, setSentences] = useState<Sentence[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
-  const [editResult, setEditResult] = useState<any>(null);
-  const [modifiedSentences, setModifiedSentences] = useState<Set<number>>(new Set());
+  const [editingSentenceId, setEditingSentenceId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+  const [showInsertDialog, setShowInsertDialog] = useState(false);
+  const [insertTargetId, setInsertTargetId] = useState<string | null>(null);
+  const [insertPosition, setInsertPosition] = useState<'before' | 'after'>('after');
+  const [insertNewParagraph, setInsertNewParagraph] = useState(false);
+  const [insertText, setInsertText] = useState('');
+  const [showSplitDialog, setShowSplitDialog] = useState(false);
+  const [splitTargetId, setSplitTargetId] = useState<string | null>(null);
+  const [splitPosition, setSplitPosition] = useState(0);
+  const [splitNewParagraph, setSplitNewParagraph] = useState(false);
 
-  const savedTextRef = useRef('');
-
-  // Split text into paragraphs for paragraph-level editing
-  const splitIntoParagraphs = (text: string): string[] => {
-    return text.split(/\n+/).filter(p => p.trim());
-  };
-
-  // Join paragraphs back into text
-  const joinParagraphs = (paragraphs: string[]): string => {
-    return paragraphs.join('\n\n');
-  };
-
-  // Get current paragraphs
-  const getCurrentParagraphs = (): string[] => {
-    return splitIntoParagraphs(editingText);
-  };
-
-  // Get flat sentence list for backward compatibility (use backend splitting)
-  const getCurrentSentences = (): string[] => {
-    // For display purposes, just split by sentences simply
-    // Backend will handle proper sentence splitting
-    return editingText
-      .split(/([.!?]+)\s*/)
-      .filter((part, index, arr) => {
-        return part.trim() !== '' || (index > 0 && index % 2 === 1);
-      })
-      .reduce((acc: string[], part, index) => {
-        if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
-          const lastText = acc.pop() || '';
-          acc.push(lastText + part);
-        } else if (part.trim()) {
-          acc.push(part);
-        }
-        return acc;
-      }, [])
-      .filter(sentence => sentence.trim().length > 0);
-  };
-
-  // Get paragraph boundaries for sentence list
-  const getParagraphBoundaries = (): Array<{ index: number; isFirst: boolean; isLast: boolean }> => {
-    const paragraphs = getCurrentParagraphs();
-    const boundaries: Array<{ index: number; isFirst: boolean; isLast: boolean }> = [];
-    let globalIndex = 0;
-
-    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
-      const paraSentences = paragraphs[pIndex]
-        .split(/([.!?]+)\s*/)
-        .filter((part, index, arr) => {
-          return part.trim() !== '' || (index > 0 && index % 2 === 1);
-        })
-        .reduce((acc: string[], part, index) => {
-          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
-            const lastText = acc.pop() || '';
-            acc.push(lastText + part);
-          } else if (part.trim()) {
-            acc.push(part);
-          }
-          return acc;
-        }, [])
-        .filter(sentence => sentence.trim().length > 0);
-
-      for (let sIndex = 0; sIndex < paraSentences.length; sIndex++) {
-        boundaries.push({
-          index: globalIndex + sIndex,
-          isFirst: sIndex === 0,
-          isLast: sIndex === paraSentences.length - 1
-        });
-      }
-
-      globalIndex += paraSentences.length;
-    }
-
-    return boundaries;
-  };
-
-  // Initialize with current record text
+  // Load sentences when record changes
   useEffect(() => {
-    if (currentRecord?.ocr_text) {
-      const text = currentRecord.ocr_text;
-      setEditingText(text);
-      setOriginalText(text);
-      savedTextRef.current = text;
-      setHasChanges(false);
-      setModifiedSentences(new Set());
+    if (currentRecord?.id) {
+      loadSentences();
     }
-  }, [currentRecord?.id, currentRecord?.ocr_text]);
-
-  // Check for unsaved changes periodically
-  useEffect(() => {
-    if (!currentRecord?.id) return;
-
-    const checkUnsaved = async () => {
-      if (isCheckingChanges) return;
-      setIsCheckingChanges(true);
-      try {
-        const result = await getUnsavedChanges(currentRecord.id);
-        setHasChanges(result.hasUnsavedChanges);
-      } catch (error) {
-        console.error('Failed to check unsaved changes:', error);
-      } finally {
-        setIsCheckingChanges(false);
-      }
-    };
-
-    checkUnsaved();
-    const interval = setInterval(checkUnsaved, 5000);
-    return () => clearInterval(interval);
   }, [currentRecord?.id]);
 
-  // Warn before closing if there are unsaved changes
-  const handleBeforeClose = (e: BeforeUnloadEvent) => {
-    if (hasUnsavedUserChanges()) {
-      e.preventDefault();
-      e.returnValue = '';
-    }
-  };
-
-  useEffect(() => {
-    window.addEventListener('beforeunload', handleBeforeClose);
-    return () => window.removeEventListener('beforeunload', handleBeforeClose);
-  }, [hasChanges]);
-
-  function hasUnsavedUserChanges() {
-    return editingText !== savedTextRef.current;
-  }
-
-  function handleTextChange(newText: string) {
-    setEditingText(newText);
-  }
-
-  function handleSentenceEdit(index: number, newText: string) {
-    // Get current paragraphs
-    const paragraphs = getCurrentParagraphs();
-
-    // Find which paragraph contains the sentence at the given index
-    let currentGlobalIndex = 0;
-    let targetParaIndex = -1;
-
-    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
-      const paraSentences = paragraphs[pIndex]
-        .split(/([.!?]+)\s*/)
-        .filter((part, index, arr) => {
-          return part.trim() !== '' || (index > 0 && index % 2 === 1);
-        })
-        .reduce((acc: string[], part, index) => {
-          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
-            const lastText = acc.pop() || '';
-            acc.push(lastText + part);
-          } else if (part.trim()) {
-            acc.push(part);
-          }
-          return acc;
-        }, [])
-        .filter(sentence => sentence.trim().length > 0);
-
-      if (currentGlobalIndex + paraSentences.length > index) {
-        targetParaIndex = pIndex;
-        break;
-      }
-      currentGlobalIndex += paraSentences.length;
-    }
-
-    if (targetParaIndex !== -1) {
-      // Reconstruct the target paragraph with the edited sentence
-      const paraSentences = paragraphs[targetParaIndex]
-        .split(/([.!?]+)\s*/)
-        .filter((part, index, arr) => {
-          return part.trim() !== '' || (index > 0 && index % 2 === 1);
-        })
-        .reduce((acc: string[], part, index) => {
-          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
-            const lastText = acc.pop() || '';
-            acc.push(lastText + part);
-          } else if (part.trim()) {
-            acc.push(part);
-          }
-          return acc;
-        }, [])
-        .filter(sentence => sentence.trim().length > 0);
-
-      // Find the sentence index within the paragraph
-      const sentenceIndexInPara = index - currentGlobalIndex;
-      paraSentences[sentenceIndexInPara] = newText;
-
-      // Reconstruct the paragraph
-      const updatedPara = paraSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
-
-      // Update the paragraphs array
-      const updatedParagraphs = [...paragraphs];
-      updatedParagraphs[targetParaIndex] = updatedPara;
-
-      // Join all paragraphs back
-      const newFullText = joinParagraphs(updatedParagraphs);
-      handleTextChange(newFullText);
-    }
-
-    // Track modified sentences
-    const originalSentences = getCurrentSentences();
-    const newSentences = getCurrentSentences();
-    const newModifiedSentences = new Set<number>();
-
-    newSentences.forEach((sentence, idx) => {
-      if (sentence.trim() !== (originalSentences[idx] || '').trim()) {
-        newModifiedSentences.add(idx);
-      }
-    });
-
-    setModifiedSentences(newModifiedSentences);
-  }
-
-  async function handleSave() {
+  async function loadSentences() {
     if (!currentRecord?.id) return;
-
-    if (!hasUnsavedUserChanges()) {
-      toast.info('没有需要保存的更改');
-      return;
+    setIsLoading(true);
+    try {
+      const data = await getRecordSentences(currentRecord.id);
+      // The API returns sentences with id, text, paragraph_index, sentence_index
+      setSentences((data.sentences || []) as Sentence[]);
+    } catch (error) {
+      console.error('Failed to load sentences:', error);
+      toast.error('加载句子失败');
+    } finally {
+      setIsLoading(false);
     }
+  }
 
-    // Check if user is deleting all content
-    const trimmedText = editingText.trim();
-    if (trimmedText === '') {
-      setShowDeleteAllDialog(true);
+  // Group sentences by paragraph
+  const groupedSentences = sentences.reduce((acc, sentence) => {
+    const pIndex = sentence.paragraph_index || 0;
+    if (!acc[pIndex]) {
+      acc[pIndex] = [];
+    }
+    acc[pIndex].push(sentence);
+    return acc;
+  }, {} as Record<number, Sentence[]>);
+
+  // Sort paragraphs and sentences
+  const sortedParagraphs = Object.keys(groupedSentences)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map(pIndex => ({
+      index: pIndex,
+      sentences: groupedSentences[pIndex].sort((a, b) => a.sentence_index - b.sentence_index)
+    }));
+
+  async function handleEditSentence(sentenceId: string, newText: string) {
+    if (!newText.trim()) {
+      toast.error('句子不能为空');
       return;
     }
 
     setIsSaving(true);
     try {
-      const result = await handleEditText(editingText);
-
-      if (result) {
-        savedTextRef.current = editingText;
-        setEditResult(result);
-        setOriginalText(editingText);
-        setModifiedSentences(new Set());
-
-        // Show success message with details
-        if (result.summary.hasChanges) {
-          toast.success(
-            `保存成功！${result.summary.modifiedCount} 个句子已修改，` +
-            `${result.clearResults?.analysesCleared || 0} 个分析已清除，` +
-            `${result.clearResults?.translationsCleared || 0} 个翻译已清除`
-          );
-        } else {
-          toast.success('保存成功！');
-        }
-
-        // Refresh record data
-        await fetchCurrentRecord();
-      }
+      await editSentence(sentenceId, newText);
+      await loadSentences();
+      toast.success('句子已更新');
+      setEditingSentenceId(null);
+      setEditingText('');
     } catch (error) {
-      console.error('Failed to save text:', error);
-      toast.error(
-        `保存失败：${error instanceof Error ? error.message : '未知错误'}`
-      );
+      console.error('Failed to edit sentence:', error);
+      toast.error('更新句子失败');
     } finally {
       setIsSaving(false);
     }
   }
 
-  async function handleConfirmDeleteAll() {
+  async function handleDeleteSentence(sentenceId: string) {
+    setIsSaving(true);
+    try {
+      await deleteSentence(sentenceId);
+      await loadSentences();
+      toast.success('句子已删除');
+    } catch (error) {
+      console.error('Failed to delete sentence:', error);
+      toast.error('删除句子失败');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function openInsertDialog(targetId: string, position: 'before' | 'after') {
+    setInsertTargetId(targetId);
+    setInsertPosition(position);
+    setInsertText('');
+    setInsertNewParagraph(false);
+    setShowInsertDialog(true);
+  }
+
+  async function handleInsertSentence() {
+    if (!currentRecord?.id || !insertTargetId || !insertText.trim()) {
+      toast.error('请输入句子内容');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await insertSentence(
+        currentRecord.id,
+        insertText,
+        insertTargetId,
+        insertPosition,
+        insertNewParagraph
+      );
+      await loadSentences();
+      toast.success('句子已插入');
+      setShowInsertDialog(false);
+      setInsertText('');
+    } catch (error) {
+      console.error('Failed to insert sentence:', error);
+      toast.error('插入句子失败');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function openSplitDialog(sentenceId: string, text: string) {
+    setSplitTargetId(sentenceId);
+    setSplitPosition(Math.floor(text.length / 2));
+    setSplitNewParagraph(false);
+    setShowSplitDialog(true);
+  }
+
+  async function handleSplitSentence() {
+    if (!splitTargetId) return;
+
+    const targetSentence = sentences.find(s => s.id === splitTargetId);
+    if (!targetSentence) return;
+
+    if (splitPosition <= 0 || splitPosition >= targetSentence.text.length) {
+      toast.error('分割位置无效');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await splitSentence(splitTargetId, splitPosition, splitNewParagraph);
+      await loadSentences();
+      toast.success('句子已分割');
+      setShowSplitDialog(false);
+    } catch (error) {
+      console.error('Failed to split sentence:', error);
+      toast.error('分割句子失败');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleDeleteAll() {
     if (!currentRecord?.id) return;
 
     setIsSaving(true);
     setShowDeleteAllDialog(false);
-    
     try {
-      const result = await handleEditText('');
-
-      if (result) {
-        savedTextRef.current = '';
-        setEditResult(result);
-        setEditingText('');
-        setOriginalText('');
-        setModifiedSentences(new Set());
-
-        toast.success('所有内容已删除');
-        
-        // Refresh record data
-        await fetchCurrentRecord();
+      // Delete all sentences
+      for (const sentence of sentences) {
+        await deleteSentence(sentence.id);
       }
+      await loadSentences();
+      toast.success('所有内容已删除');
     } catch (error) {
-      console.error('Failed to delete all content:', error);
-      toast.error(
-        `删除失败：${error instanceof Error ? error.message : '未知错误'}`
-      );
+      console.error('Failed to delete all:', error);
+      toast.error('删除失败');
     } finally {
       setIsSaving(false);
     }
   }
 
-  function handleReset() {
-    setEditingText(originalText);
-    setModifiedSentences(new Set());
-    toast.info('已重置为原始文本');
-  }
-
-  function handleDeleteSentence(index: number) {
-    const paragraphs = getCurrentParagraphs();
-    
-    // Find which paragraph contains the sentence
-    let currentGlobalIndex = 0;
-    let targetParaIndex = -1;
-    
-    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
-      const paraSentences = paragraphs[pIndex]
-        .split(/([.!?]+)\s*/)
-        .filter((part, index, arr) => {
-          return part.trim() !== '' || (index > 0 && index % 2 === 1);
-        })
-        .reduce((acc: string[], part, index) => {
-          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
-            const lastText = acc.pop() || '';
-            acc.push(lastText + part);
-          } else if (part.trim()) {
-            acc.push(part);
-          }
-          return acc;
-        }, [])
-        .filter(sentence => sentence.trim().length > 0);
-      
-      if (currentGlobalIndex + paraSentences.length > index) {
-        targetParaIndex = pIndex;
-        break;
-      }
-      currentGlobalIndex += paraSentences.length;
-    }
-    
-    if (targetParaIndex !== -1) {
-      const paraSentences = paragraphs[targetParaIndex]
-        .split(/([.!?]+)\s*/)
-        .filter((part, index, arr) => {
-          return part.trim() !== '' || (index > 0 && index % 2 === 1);
-        })
-        .reduce((acc: string[], part, index) => {
-          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
-            const lastText = acc.pop() || '';
-            acc.push(lastText + part);
-          } else if (part.trim()) {
-            acc.push(part);
-          }
-          return acc;
-        }, [])
-        .filter(sentence => sentence.trim().length > 0);
-      
-      const sentenceIndexInPara = index - currentGlobalIndex;
-      paraSentences.splice(sentenceIndexInPara, 1);
-      
-      const updatedPara = paraSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
-      
-      const updatedParagraphs = [...paragraphs];
-      if (updatedPara) {
-        updatedParagraphs[targetParaIndex] = updatedPara;
-      } else {
-        updatedParagraphs.splice(targetParaIndex, 1);
-      }
-      
-      const newFullText = joinParagraphs(updatedParagraphs);
-      handleTextChange(newFullText);
-      toast.info('句子已删除（保存后生效）');
-    }
-  }
-
-  function handleInsertBefore(index: number) {
-    const paragraphs = getCurrentParagraphs();
-    
-    // Find which paragraph contains the sentence
-    let currentGlobalIndex = 0;
-    let targetParaIndex = -1;
-    
-    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
-      const paraSentences = paragraphs[pIndex]
-        .split(/([.!?]+)\s*/)
-        .filter((part, index, arr) => {
-          return part.trim() !== '' || (index > 0 && index % 2 === 1);
-        })
-        .reduce((acc: string[], part, index) => {
-          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
-            const lastText = acc.pop() || '';
-            acc.push(lastText + part);
-          } else if (part.trim()) {
-            acc.push(part);
-          }
-          return acc;
-        }, [])
-        .filter(sentence => sentence.trim().length > 0);
-      
-      if (currentGlobalIndex + paraSentences.length > index) {
-        targetParaIndex = pIndex;
-        break;
-      }
-      currentGlobalIndex += paraSentences.length;
-    }
-    
-    if (targetParaIndex !== -1) {
-      // Insert new paragraph before the target paragraph
-      const updatedParagraphs = [...paragraphs];
-      updatedParagraphs.splice(targetParaIndex, 0, 'New sentence.');
-      
-      const newFullText = joinParagraphs(updatedParagraphs);
-      handleTextChange(newFullText);
-      
-      toast.info('新段落已插入');
-    }
-  }
-
-  function handleInsertAfter(index: number) {
-    const paragraphs = getCurrentParagraphs();
-    
-    // Find which paragraph contains the sentence
-    let currentGlobalIndex = 0;
-    let targetParaIndex = -1;
-    
-    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
-      const paraSentences = paragraphs[pIndex]
-        .split(/([.!?]+)\s*/)
-        .filter((part, index, arr) => {
-          return part.trim() !== '' || (index > 0 && index % 2 === 1);
-        })
-        .reduce((acc: string[], part, index) => {
-          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
-            const lastText = acc.pop() || '';
-            acc.push(lastText + part);
-          } else if (part.trim()) {
-            acc.push(part);
-          }
-          return acc;
-        }, [])
-        .filter(sentence => sentence.trim().length > 0);
-      
-      if (currentGlobalIndex + paraSentences.length > index) {
-        targetParaIndex = pIndex;
-        break;
-      }
-      currentGlobalIndex += paraSentences.length;
-    }
-    
-    if (targetParaIndex !== -1) {
-      // Insert new paragraph after the target paragraph
-      const updatedParagraphs = [...paragraphs];
-      updatedParagraphs.splice(targetParaIndex + 1, 0, 'New sentence.');
-      
-      const newFullText = joinParagraphs(updatedParagraphs);
-      handleTextChange(newFullText);
-      
-      toast.info('新段落已插入');
-    }
-  }
-
-  function handleSplitSentence(index: number) {
-    const paragraphs = getCurrentParagraphs();
-    const sentences = getCurrentSentences();
-    const sentence = sentences[index];
-    
-    if (!sentence) return;
-    
-    const midPoint = Math.floor(sentence.length / 2);
-    const firstPart = sentence.substring(0, midPoint).trim();
-    const secondPart = sentence.substring(midPoint).trim();
-    
-    if (!firstPart || !secondPart) {
-      toast.error('句子太短，无法拆分');
-      return;
-    }
-    
-    // Find which paragraph contains the sentence
-    let currentGlobalIndex = 0;
-    let targetParaIndex = -1;
-    
-    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
-      const paraSentences = paragraphs[pIndex]
-        .split(/([.!?]+)\s*/)
-        .filter((part, index, arr) => {
-          return part.trim() !== '' || (index > 0 && index % 2 === 1);
-        })
-        .reduce((acc: string[], part, index) => {
-          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
-            const lastText = acc.pop() || '';
-            acc.push(lastText + part);
-          } else if (part.trim()) {
-            acc.push(part);
-          }
-          return acc;
-        }, [])
-        .filter(sentence => sentence.trim().length > 0);
-      
-      if (currentGlobalIndex + paraSentences.length > index) {
-        targetParaIndex = pIndex;
-        break;
-      }
-      currentGlobalIndex += paraSentences.length;
-    }
-    
-    if (targetParaIndex !== -1) {
-      const paraSentences = paragraphs[targetParaIndex]
-        .split(/([.!?]+)\s*/)
-        .filter((part, index, arr) => {
-          return part.trim() !== '' || (index > 0 && index % 2 === 1);
-        })
-        .reduce((acc: string[], part, index) => {
-          if (index > 0 && index % 2 === 1 && /[.!?]+/.test(part)) {
-            const lastText = acc.pop() || '';
-            acc.push(lastText + part);
-          } else if (part.trim()) {
-            acc.push(part);
-          }
-          return acc;
-        }, [])
-        .filter(sentence => sentence.trim().length > 0);
-      
-      const sentenceIndexInPara = index - currentGlobalIndex;
-      paraSentences.splice(sentenceIndexInPara, 1, firstPart, secondPart);
-      
-      const updatedPara = paraSentences.join(' ').replace(/\s{2,}/g, ' ').trim();
-      
-      const updatedParagraphs = [...paragraphs];
-      updatedParagraphs[targetParaIndex] = updatedPara;
-      
-      const newFullText = joinParagraphs(updatedParagraphs);
-      handleTextChange(newFullText);
-      toast.info('句子已拆分（保存后生效）');
-    }
-  }
-
   function handleConfirmClose() {
-    if (hasUnsavedUserChanges()) {
+    if (editingSentenceId) {
       setShowConfirmDialog(true);
     } else {
       onClose?.();
@@ -556,6 +211,8 @@ export default function TextEditor({ onClose }: TextEditorProps) {
 
   function handleConfirmDiscard() {
     setShowConfirmDialog(false);
+    setEditingSentenceId(null);
+    setEditingText('');
     onClose?.();
   }
 
@@ -564,9 +221,6 @@ export default function TextEditor({ onClose }: TextEditorProps) {
   }
 
   if (!currentRecord) return null;
-
-  const sentences = getCurrentSentences();
-  const paragraphBoundaries = getParagraphBoundaries();
 
   return (
     <div className="flex flex-col h-full">
@@ -583,33 +237,6 @@ export default function TextEditor({ onClose }: TextEditorProps) {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={handleReset}
-            disabled={isSaving || !hasUnsavedUserChanges()}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--color-surface)] hover:bg-[var(--color-surface-hover)] text-[var(--color-text)] border border-[var(--color-border)]"
-            title="重置为原始文本"
-          >
-            重置
-          </button>
-
-          <button
-            onClick={handleSave}
-            disabled={isSaving || !hasUnsavedUserChanges()}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--color-primary-foreground)] flex items-center gap-2"
-          >
-            {isSaving ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                保存中...
-              </>
-            ) : (
-              <>
-                <Save size={16} />
-                保存
-              </>
-            )}
-          </button>
-
-          <button
             onClick={handleConfirmClose}
             className="p-2 rounded-lg transition-colors hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
             title="关闭"
@@ -619,77 +246,272 @@ export default function TextEditor({ onClose }: TextEditorProps) {
         </div>
       </div>
 
-      {/* Sentence List Editor */}
-      <div className="flex-1 overflow-hidden p-4">
-        <SentenceList
-          sentences={sentences}
-          modifiedSentences={modifiedSentences}
-          onEdit={handleSentenceEdit}
-          onDelete={handleDeleteSentence}
-          onInsertBefore={handleInsertBefore}
-          onInsertAfter={handleInsertAfter}
-          onSplit={handleSplitSentence}
-          paragraphBoundaries={paragraphBoundaries}
-        />
+      {/* Sentences List */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 size={32} className="animate-spin text-[var(--color-text-muted)]" />
+          </div>
+        ) : sortedParagraphs.length === 0 ? (
+          <div className="text-center text-[var(--color-text-muted)] py-8">
+            暂无句子内容
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {sortedParagraphs.map((paragraph) => (
+              <div key={paragraph.index} className="relative">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs text-[var(--color-text-muted)] font-medium">
+                    段落 {paragraph.index + 1}
+                  </span>
+                  <button
+                    onClick={() => {
+                      const firstSentence = paragraph.sentences[0];
+                      if (firstSentence) {
+                        openInsertDialog(firstSentence.id, 'before');
+                        setInsertNewParagraph(true);
+                      }
+                    }}
+                    className="p-1 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)]"
+                    title="在段落前插入新段落"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+                <div className="space-y-2 pl-4 border-l-2 border-[var(--color-border)]">
+                  {paragraph.sentences.map((sentence) => (
+                    <div
+                      key={sentence.id}
+                      className="group relative bg-[var(--color-surface)] rounded-lg p-3 hover:bg-[var(--color-surface-hover)] transition-colors"
+                    >
+                      {editingSentenceId === sentence.id ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editingText}
+                            onChange={(e) => setEditingText(e.target.value)}
+                            className="w-full p-2 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] resize-none"
+                            rows={2}
+                            autoFocus
+                          />
+                          <div className="flex items-center gap-2 justify-end">
+                            <button
+                              onClick={() => {
+                                setEditingSentenceId(null);
+                                setEditingText('');
+                              }}
+                              className="px-3 py-1.5 rounded text-sm text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)]"
+                            >
+                              取消
+                            </button>
+                            <button
+                              onClick={() => handleEditSentence(sentence.id, editingText)}
+                              disabled={isSaving}
+                              className="px-3 py-1.5 rounded text-sm bg-[var(--color-primary)] text-[var(--color-primary-foreground)] disabled:opacity-50 flex items-center gap-1"
+                            >
+                              {isSaving ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <Save size={14} />
+                              )}
+                              保存
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-start gap-2">
+                            <span className="text-xs text-[var(--color-text-muted)] mt-1">
+                              {sentence.sentence_index + 1}.
+                            </span>
+                            <p className="flex-1 text-[var(--color-text)]">
+                              {sentence.text}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => {
+                                setEditingSentenceId(sentence.id);
+                                setEditingText(sentence.text);
+                              }}
+                              className="p-1.5 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                              title="编辑"
+                            >
+                              <Save size={14} />
+                            </button>
+                            <button
+                              onClick={() => openInsertDialog(sentence.id, 'before')}
+                              className="p-1.5 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                              title="在前面插入"
+                            >
+                              <Plus size={14} />
+                            </button>
+                            <button
+                              onClick={() => openInsertDialog(sentence.id, 'after')}
+                              className="p-1.5 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                              title="在后面插入"
+                            >
+                              <Plus size={14} />
+                            </button>
+                            <button
+                              onClick={() => openSplitDialog(sentence.id, sentence.text)}
+                              className="p-1.5 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                              title="分割句子"
+                            >
+                              <Scissors size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSentence(sentence.id)}
+                              className="p-1.5 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-error)] hover:text-[var(--color-error)]"
+                              title="删除"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => {
+                    const lastSentence = paragraph.sentences[paragraph.sentences.length - 1];
+                    if (lastSentence) {
+                      openInsertDialog(lastSentence.id, 'after');
+                      setInsertNewParagraph(true);
+                    }
+                  }}
+                  className="mt-2 ml-4 px-3 py-1.5 rounded text-sm text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] flex items-center gap-1"
+                >
+                  <Plus size={14} />
+                  在段落后插入新段落
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Status Bar */}
       <div className="flex items-center justify-between px-4 py-2 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="text-sm text-[var(--color-text-muted)]">
-          {hasUnsavedUserChanges() && (
-            <span className="flex items-center gap-1.5 text-[var(--color-warning)]">
-              <span className="w-2 h-2 rounded-full bg-[var(--color-warning)]" />
-              有未保存的更改 ({modifiedSentences.size} 个句子已修改)
-            </span>
-          )}
-          {!hasUnsavedUserChanges() && (
-            <span className="flex items-center gap-1.5 text-[var(--color-success)]">
-              <Check size={14} />
-              已保存
-            </span>
-          )}
+          <span className="flex items-center gap-1.5 text-[var(--color-success)]">
+            <Check size={14} />
+            已保存
+          </span>
         </div>
 
         <div className="text-sm text-[var(--color-text-muted)]">
-          {editingText.length} 字符 • {sentences.length} 个句子
+          {sentences.length} 个句子 • {sortedParagraphs.length} 个段落
         </div>
       </div>
 
-      {/* Last Edit Result Info */}
-      {editResult && editResult.summary.hasChanges && (
-        <div className="px-4 py-2 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
-          <div className="text-sm text-[var(--color-text-muted)]">
-            上次保存结果：
-            {editResult.summary.modifiedCount > 0 && (
-              <span className="ml-2">
-                {editResult.summary.modifiedCount} 个句子修改，
-              </span>
-            )}
-            {editResult.summary.deletedCount > 0 && (
-              <span className="ml-2">
-                {editResult.summary.deletedCount} 个句子删除，
-              </span>
-            )}
-            {editResult.summary.addedCount > 0 && (
-              <span className="ml-2">
-                {editResult.summary.addedCount} 个句子新增，
-              </span>
-            )}
-            {editResult.clearResults && (
-              <span>
-                {editResult.clearResults.analysesCleared} 个分析清除，
-                {editResult.clearResults.translationsCleared} 个翻译清除
-              </span>
-            )}
+      {/* Insert Dialog */}
+      <Dialog open={showInsertDialog} onClose={() => setShowInsertDialog(false)} title="插入句子">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-text)] mb-2">
+              句子内容
+            </label>
+            <textarea
+              value={insertText}
+              onChange={(e) => setInsertText(e.target.value)}
+              className="w-full p-2 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] resize-none"
+              rows={3}
+              placeholder="输入句子内容..."
+            />
+          </div>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+              <input
+                type="checkbox"
+                checked={insertNewParagraph}
+                onChange={(e) => setInsertNewParagraph(e.target.checked)}
+                className="rounded"
+              />
+              新建段落
+            </label>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              onClick={() => setShowInsertDialog(false)}
+              className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleInsertSentence}
+              disabled={isSaving || !insertText.trim()}
+              className="px-4 py-2 text-sm rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-40"
+            >
+              {isSaving ? '插入中...' : '插入'}
+            </button>
           </div>
         </div>
-      )}
+      </Dialog>
+
+      {/* Split Dialog */}
+      <Dialog open={showSplitDialog} onClose={() => setShowSplitDialog(false)} title="分割句子">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-text)] mb-2">
+              分割位置 (字符索引: {splitPosition})
+            </label>
+            <input
+              type="range"
+              min={1}
+              max={(sentences.find(s => s.id === splitTargetId)?.text.length || 1) - 1}
+              value={splitPosition}
+              onChange={(e) => setSplitPosition(Number(e.target.value))}
+              className="w-full"
+            />
+            <div className="mt-2 p-2 rounded bg-[var(--color-surface)] text-sm text-[var(--color-text-muted)]">
+              {(() => {
+                const sentence = sentences.find(s => s.id === splitTargetId);
+                if (!sentence) return '';
+                const first = sentence.text.substring(0, splitPosition);
+                const second = sentence.text.substring(splitPosition);
+                return (
+                  <div>
+                    <div>{first}<span className="bg-[var(--color-primary)] text-[var(--color-primary-foreground)]">|</span>{second}</div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+              <input
+                type="checkbox"
+                checked={splitNewParagraph}
+                onChange={(e) => setSplitNewParagraph(e.target.checked)}
+                className="rounded"
+              />
+              第二部分新建段落
+            </label>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              onClick={() => setShowSplitDialog(false)}
+              className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSplitSentence}
+              disabled={isSaving}
+              className="px-4 py-2 text-sm rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-40"
+            >
+              {isSaving ? '分割中...' : '分割'}
+            </button>
+          </div>
+        </div>
+      </Dialog>
 
       {/* Confirmation Dialog */}
       <ConfirmDialog
         open={showConfirmDialog}
         title="有未保存的更改"
-        message="您有未保存的更改，确定要关闭吗？这些更改将会丢失。"
+        message="您有正在编辑的句子，确定要关闭吗？这些更改将会丢失。"
         confirmText="放弃更改"
         cancelText="继续编辑"
         onConfirm={handleConfirmDiscard}
@@ -700,10 +522,10 @@ export default function TextEditor({ onClose }: TextEditorProps) {
       <ConfirmDialog
         open={showDeleteAllDialog}
         title="删除所有内容"
-        message="确定要删除所有文本内容吗？此操作将同时删除相关的图片、翻译和分析内容，且无法恢复。"
+        message="确定要删除所有句子吗？此操作无法恢复。"
         confirmText="删除所有内容"
         cancelText="取消"
-        onConfirm={handleConfirmDeleteAll}
+        onConfirm={handleDeleteAll}
         onClose={() => setShowDeleteAllDialog(false)}
         danger
       />

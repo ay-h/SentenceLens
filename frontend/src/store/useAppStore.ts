@@ -21,7 +21,7 @@ export function useAppStore() {
     return v ? parseInt(v) : null;
   });
   const [currentRecord, setCurrentRecord] = useState<RecordDetail | null>(null);
-  const [sentences, setSentences] = useState<Array<{ id?: string; text: string; index: number; paragraph_index: number }>>([]);
+  const [sentences, setSentences] = useState<Array<{ id?: string; text: string; sentence_index: number; paragraph_index: number; is_modified?: number }>>([]);
   const [paragraphs, setParagraphs] = useState<string[][]>([]);
   const [translations, setTranslations] = useState<Translation[]>([]);
   const [selectedSentence, setSelectedSentence] = useState<string | null>(null);
@@ -189,9 +189,9 @@ export function useAppStore() {
         // Re-select the sentence to show analysis
         setSelectedSentence(selectedSentence);
         // The analysis is now in the record's analyses list after refresh
-        // Find it and set it
+        // Find it by sentence_id and set it
         const updatedRecord = await api.getRecord(currentRecordId);
-        const analysis = updatedRecord.analyses?.find(a => a.sentence === selectedSentence);
+        const analysis = updatedRecord.analyses?.find(a => a.sentence_id === sentence_id);
         setSelectedAnalysis(analysis || null);
       }
     } catch (error) {
@@ -266,22 +266,6 @@ export function useAppStore() {
         return result.data;
       } else {
         throw new Error(result.error);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [currentRecordId]);
-
-  // Edit text
-  const handleEditText = useCallback(async (text: string) => {
-    if (!currentRecordId) return;
-    setLoading(true);
-    try {
-      const result = await api.editText(currentRecordId, text);
-      if (result.success) {
-        // Refresh record detail
-        await selectRecordRef.current(currentRecordId);
-        return result;
       }
     } finally {
       setLoading(false);
@@ -386,7 +370,6 @@ export function useAppStore() {
     handleDeleteRecord,
     handleRenameRecord,
     handleUnifiedTranslate,
-    handleEditText,
     toggleSidebar,
     toggleTranslation,
     toggleTextEditing,

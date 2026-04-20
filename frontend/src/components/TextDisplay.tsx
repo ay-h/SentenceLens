@@ -75,7 +75,7 @@ export default function TextDisplay() {
     groupedSentences[pIndex].push({
       id: (s as any).id, // Cast to any since id is optional and may not exist in old data
       text: s.text,
-      index: s.index,
+      index: s.sentence_index,
       paragraph_index: s.paragraph_index
     });
   });

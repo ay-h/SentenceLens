@@ -10,43 +10,56 @@ class TranslationService {
   }
 
   /**
-   * Get sentences from record text
-   * @param {Object} record - Record object with ocr_text
+   * Get sentences from record
+   * @param {Object} record - Record object
    * @returns {Array} - Array of sentence objects with paragraph info and UUID
    */
   getSentencesFromRecord(record) {
-    if (!record || !record.ocr_text) {
+    if (!record) {
       return [];
     }
 
-    // Import sentence splitting functions
-    const { splitParagraphs, cleanSentence } = require('./sentenceSplit');
+    // Get sentences from database
+    const sentences = this.db.getSentencesByRecord(record.id);
+    if (!sentences || sentences.length === 0) {
+      return [];
+    }
 
-    // Split into paragraphs and sentences (now includes persisted UUIDs)
-    const paragraphs = splitParagraphs(record.ocr_text, record.id, this.db);
-    const sentences = [];
+    // Group by paragraph_index and sort
+    const grouped = {};
+    for (const s of sentences) {
+      const pIndex = s.paragraph_index || 0;
+      if (!grouped[pIndex]) {
+        grouped[pIndex] = [];
+      }
+      grouped[pIndex].push(s);
+    }
 
+    // Sort by paragraph_index and sentence_index
+    const sortedParagraphs = Object.keys(grouped)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map(pIndex => 
+        grouped[pIndex].sort((a, b) => a.sentence_index - b.sentence_index)
+      );
+
+    // Flatten and add display index
+    const result = [];
     let globalIndex = 0;
-    for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
-      const paragraphSentences = paragraphs[pIndex].map(s => {
-        const cleaned = cleanSentence(s.text);
-        return {
-          id: s.id, // Use the UUID from splitParagraphs
-          text: cleaned,
-          translation: null, // Will be loaded separately
-          is_modified: 0, // Default value
-          paragraph_index: pIndex // Add paragraph index
-        };
-      }).filter(s => s.text);
-
-      for (const sentence of paragraphSentences) {
-        sentence.index = globalIndex; // Add index for display purposes
-        sentences.push(sentence);
-        globalIndex++;
+    for (const paragraph of sortedParagraphs) {
+      for (const s of paragraph) {
+        result.push({
+          id: s.id,
+          text: s.text,
+          translation: null,
+          is_modified: s.is_modified || 0,
+          paragraph_index: s.paragraph_index || 0,
+          index: globalIndex++
+        });
       }
     }
 
-    return sentences;
+    return result;
   }
 
   /**

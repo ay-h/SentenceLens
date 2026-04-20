@@ -62,7 +62,7 @@ export async function getRecord(id: number): Promise<RecordDetail> {
 }
 
 export async function getRecordSentences(id: number): Promise<{
-  sentences: Array<{ text: string; index: number; paragraph_index: number }>;
+  sentences: Array<{ id: string; text: string; paragraph_index: number; sentence_index: number; is_modified?: number }>;
   paragraphs: string[][];
 }> {
   return request(`/api/records/${id}/sentences`);
@@ -78,46 +78,6 @@ export async function updateRecordName(id: number, name: string): Promise<Record
 
 export async function deleteRecord(id: number): Promise<{ success: boolean }> {
   return request(`/api/records/${id}`, { method: 'DELETE' });
-}
-
-// ==================== Text Edit ====================
-
-export async function editText(
-  recordId: number,
-  text: string,
-): Promise<{
-  success: boolean;
-  message: string;
-  changes: Array<{
-    sentenceIndex: number;
-    oldText: string | null;
-    newText: string | null;
-    type: 'added' | 'modified' | 'deleted' | 'unchanged';
-  }>;
-  summary: {
-    hasChanges: boolean;
-    modifiedCount: number;
-    deletedCount: number;
-    addedCount: number;
-    unchangedCount: number;
-  };
-  clearResults?: {
-    analysesCleared: number;
-    translationsCleared: number;
-    errors: Array<{ sentenceId?: number; index?: number; error: string }>;
-  };
-}> {
-  return request(`/api/records/${recordId}/text/edit`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
-  });
-}
-
-export async function getUnsavedChanges(
-  recordId: number,
-): Promise<{ hasUnsavedChanges: boolean }> {
-  return request(`/api/records/${recordId}/unsaved-changes`);
 }
 
 // ==================== Upload & Text ====================
@@ -236,9 +196,20 @@ export async function getRecordQuality(
 
 // ==================== Sentence Editing ====================
 
+export async function editSentence(
+  sentenceId: string,
+  text: string,
+): Promise<{ success: boolean; message: string; sentence: { id: string; text: string } }> {
+  return request(`/api/sentences/${sentenceId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+}
+
 export async function deleteSentence(
   sentenceId: string,
-): Promise<{ success: boolean; message: string; sentence_id: string; record_id: number }> {
+): Promise<{ success: boolean; message: string; sentences: any[] }> {
   return request(`/api/sentences/${sentenceId}`, { method: 'DELETE' });
 }
 
@@ -251,8 +222,7 @@ export async function insertSentence(
 ): Promise<{
   success: boolean;
   message: string;
-  sentence: { id: string; text: string; paragraph_index: number; sentence_index: number };
-  record_id: number;
+  sentences: any[];
 }> {
   return request('/api/sentences/insert', {
     method: 'POST',
@@ -273,13 +243,7 @@ export async function splitSentence(
 ): Promise<{
   success: boolean;
   message: string;
-  sentences: Array<{
-    id: string;
-    text: string;
-    paragraph_index: number;
-    sentence_index: number;
-  }>;
-  record_id: number;
+  sentences: any[];
 }> {
   return request(`/api/sentences/${sentenceId}/split`, {
     method: 'POST',
