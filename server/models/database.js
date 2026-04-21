@@ -516,6 +516,7 @@ function deleteRecord(id) {
   // Delete related data
   execute('DELETE FROM sentence_analyses WHERE record_id = ?', [id]);
   execute('DELETE FROM sentence_translations WHERE record_id = ?', [id]);
+  execute('DELETE FROM sentences WHERE record_id = ?', [id]);
   const result = execute('DELETE FROM records WHERE id = ?', [id]);
 
   // Update session timestamp
