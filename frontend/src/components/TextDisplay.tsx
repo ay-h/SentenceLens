@@ -4,7 +4,7 @@ import { useWordLookup } from '@/hooks/useWordLookup';
 import { useApp } from '@/store/AppContext';
 import type { SentenceAnalysis } from '@/types';
 import { Loader2, Pause, Play, Search, Square, Trash2, Volume2, X } from 'lucide-react';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 // TTS Control Buttons Component
@@ -98,6 +98,45 @@ export default function TextDisplay() {
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [buttonPosition, setButtonPosition] = useState<'top' | 'bottom'>('bottom');
+  const [buttonOffset, setButtonOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartPos = useRef({ x: 0, y: 0 });
+  const dragStartOffset = useRef({ x: 0, y: 0 });
+
+  // Drag handlers
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Only left click
+    setIsDragging(true);
+    dragStartPos.current = { x: e.clientX, y: e.clientY };
+    dragStartOffset.current = { ...buttonOffset };
+    e.preventDefault();
+  }, [buttonOffset]);
+
+  const handleDragMove = useCallback((e: MouseEvent) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStartPos.current.x;
+    const dy = e.clientY - dragStartPos.current.y;
+    setButtonOffset({
+      x: dragStartOffset.current.x + dx,
+      y: dragStartOffset.current.y + dy,
+    });
+  }, [isDragging]);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  // Add/remove drag event listeners
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleDragMove);
+      window.addEventListener('mouseup', handleDragEnd);
+      return () => {
+        window.removeEventListener('mousemove', handleDragMove);
+        window.removeEventListener('mouseup', handleDragEnd);
+      };
+    }
+  }, [isDragging, handleDragMove, handleDragEnd]);
 
   // Word lookup
   const { wordLookup, lookupWord, closeWordLookup } = useWordLookup();
@@ -239,6 +278,21 @@ export default function TextDisplay() {
 
                 const showActions = isSelected;
 
+                // Detect button position immediately (not in timeout) to avoid layout shifts
+                const detectButtonPosition = () => {
+                  if (sentenceRef.current) {
+                    const rect = sentenceRef.current.getBoundingClientRect();
+                    const viewportHeight = window.innerHeight;
+                    // If sentence is near top of viewport, show buttons below
+                    // Use 50% threshold instead of 30% to avoid issues with first sentence
+                    if (rect.top < viewportHeight * 0.5) {
+                      setButtonPosition('bottom');
+                    } else {
+                      setButtonPosition('top');
+                    }
+                  }
+                };
+
                 // Split sentence into word tokens for dblclick word lookup
                 const wordTokens = sentence.match(/[\p{L}\d''-]+|[^\p{L}\d''-]+/gu) || [sentence];
 
@@ -257,19 +311,8 @@ export default function TextDisplay() {
                   setDeleteOpen(false);
                   handleSelectSentence(sentence.trim(), analysis);
 
-                  // Detect if sentence is near top of viewport
-                  setTimeout(() => {
-                    if (sentenceRef.current) {
-                      const rect = sentenceRef.current.getBoundingClientRect();
-                      const viewportHeight = window.innerHeight;
-                      // If sentence is in top 30% of viewport, show buttons below
-                      if (rect.top < viewportHeight * 0.3) {
-                        setButtonPosition('bottom');
-                      } else {
-                        setButtonPosition('top');
-                      }
-                    }
-                  }, 0);
+                  // Detect button position
+                  detectButtonPosition();
                 };
 
                 return (
@@ -306,9 +349,16 @@ export default function TextDisplay() {
                       </span>
 
                       {showActions && (
-                        <div className={`absolute left-0 z-10 flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-white shadow-md rounded-md px-3 py-2 border border-gray-200 whitespace-nowrap ${
-                          buttonPosition === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
-                        }`}>
+                        <div
+                          className={`absolute left-0 z-10 flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-white shadow-md rounded-md px-3 py-2 border border-gray-200 whitespace-nowrap cursor-move ${
+                            buttonPosition === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
+                          }`}
+                          style={{
+                            transform: `translate(${buttonOffset.x}px, ${buttonOffset.y}px)`,
+                            userSelect: isDragging ? 'none' : 'auto',
+                          }}
+                          onMouseDown={handleDragStart}
+                        >
                         {/* TTS Control Buttons - always first */}
                         <TTSControlButtons
                           sentence={sentence}
@@ -327,7 +377,7 @@ export default function TextDisplay() {
                           className="flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50"
                         >
                           {analyzing ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
-                          {analyzing ? '分析中...' : '分析句子'}
+                          {analyzing ? '分析中' : '分析'}
                         </button>
 
                         {selectedAnalysis && (
@@ -337,7 +387,7 @@ export default function TextDisplay() {
                             className="flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--color-danger)] text-white hover:bg-[var(--color-danger-hover)] transition-colors disabled:opacity-50"
                           >
                             {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                            {deleting ? '删除中...' : '删除分析'}
+                            {deleting ? '删除中' : '删除'}
                           </button>
                         )}
 
