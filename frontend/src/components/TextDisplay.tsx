@@ -3,15 +3,95 @@ import WordLookupPopover from '@/components/WordLookupPopover';
 import { useWordLookup } from '@/hooks/useWordLookup';
 import { useApp } from '@/store/AppContext';
 import type { SentenceAnalysis } from '@/types';
-import { Loader2, Search, Trash2, X } from 'lucide-react';
+import { Loader2, Pause, Play, Search, Square, Trash2, Volume2, X } from 'lucide-react';
 import React, { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
+
+// TTS Control Buttons Component
+function TTSControlButtons({
+  sentence,
+  ttsCurrentSentence,
+  ttsSpeaking,
+  ttsPaused,
+  onSpeak,
+  onPause,
+  onResume,
+  onCancel,
+}: {
+  sentence: string;
+  ttsCurrentSentence: string | null;
+  ttsSpeaking: boolean;
+  ttsPaused: boolean;
+  onSpeak: (text: string) => void;
+  onPause: () => void;
+  onResume: () => void;
+  onCancel: () => void;
+}) {
+  const isCurrentSentence = sentence.trim() === ttsCurrentSentence;
+
+  if (!isCurrentSentence) {
+    return (
+      <button
+        onClick={() => onSpeak(sentence)}
+        className="flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--color-success)] text-white hover:bg-[var(--color-success-hover)] transition-colors"
+      >
+        <Volume2 size={12} />
+        朗读
+      </button>
+    );
+  }
+
+  return (
+    <>
+      {ttsPaused ? (
+        <>
+          <button
+            onClick={onResume}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium shadow-sm"
+            style={{ zIndex: 100 }}
+          >
+            <Play size={12} />
+            继续
+          </button>
+          <button
+            onClick={onCancel}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors font-medium shadow-sm"
+            style={{ zIndex: 100 }}
+          >
+            <Square size={12} />
+            停止
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            onClick={onPause}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-yellow-500 text-white hover:bg-yellow-600 transition-colors font-medium shadow-sm"
+            style={{ zIndex: 100 }}
+          >
+            <Pause size={12} />
+            暂停
+          </button>
+          <button
+            onClick={onCancel}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors font-medium shadow-sm"
+            style={{ zIndex: 100 }}
+          >
+            <Square size={12} />
+            停止
+          </button>
+        </>
+      )}
+    </>
+  );
+}
 
 export default function TextDisplay() {
   const {
     sentences, paragraphs, currentRecord, translations, showTranslation,
     selectedSentence, selectedAnalysis,
     handleSelectSentence, handleAnalyze, handleDeleteAnalysis, cancelSelection, loading,
+    ttsSpeaking, ttsPaused, ttsCurrentSentence, ttsSpeak, ttsPause, ttsResume, ttsCancel,
   } = useApp();
 
   const [analyzing, setAnalyzing] = useState(false);
@@ -229,6 +309,18 @@ export default function TextDisplay() {
                         <div className={`absolute left-0 z-10 flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-white shadow-md rounded-md px-3 py-2 border border-gray-200 whitespace-nowrap ${
                           buttonPosition === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
                         }`}>
+                        {/* TTS Control Buttons - always first */}
+                        <TTSControlButtons
+                          sentence={sentence}
+                          ttsCurrentSentence={ttsCurrentSentence}
+                          ttsSpeaking={ttsSpeaking}
+                          ttsPaused={ttsPaused}
+                          onSpeak={ttsSpeak}
+                          onPause={ttsPause}
+                          onResume={ttsResume}
+                          onCancel={ttsCancel}
+                        />
+
                         <button
                           onClick={onAnalyze}
                           disabled={analyzing || loading}

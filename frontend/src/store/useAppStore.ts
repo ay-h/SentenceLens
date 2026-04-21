@@ -1,12 +1,70 @@
 import * as api from '@/api';
 import type { Record, RecordDetail, SentenceAnalysis, Session, Translation } from '@/types';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 function loadFromStorage(key: string): string | null {
   try { return localStorage.getItem(key); } catch { return null; }
 }
 function saveToStorage(key: string, value: string) {
   try { localStorage.setItem(key, value); } catch { /* noop */ }
+}
+
+/**
+ * Convert numbers to English words to avoid Chinese pronunciation
+ */
+function numberToEnglishWords(text: string): string {
+  const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+  const teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+
+  function convertHundreds(num: number): string {
+    if (num === 0) return '';
+    if (num < 10) return ones[num];
+    if (num < 20) return teens[num - 10];
+    if (num < 100) {
+      const ten = Math.floor(num / 10);
+      const one = num % 10;
+      return tens[ten] + (one ? '-' + ones[one] : '');
+    }
+    const hundred = Math.floor(num / 100);
+    const remainder = num % 100;
+    return ones[hundred] + ' hundred' + (remainder ? ' and ' + convertHundreds(remainder) : '');
+  }
+
+  function convertNumber(num: number): string {
+    if (num === 0) return 'zero';
+
+    const scales = ['', 'thousand', 'million', 'billion', 'trillion'];
+    let result = '';
+    let scaleIndex = 0;
+
+    while (num > 0) {
+      const chunk = num % 1000;
+      if (chunk > 0) {
+        const chunkWords = convertHundreds(chunk);
+        const scale = scales[scaleIndex];
+        result = chunkWords + (scale ? ' ' + scale : '') + (result ? ' ' + result : '');
+      }
+      num = Math.floor(num / 1000);
+      scaleIndex++;
+    }
+
+    return result;
+  }
+
+  // Replace all numbers in the text with their English word equivalents
+  // Handles both integers and decimals (e.g., 3.14 -> "three point one four")
+  return text.replace(/\b\d+\.?\d*\b/g, (match) => {
+    if (match.includes('.')) {
+      const [integerPart, decimalPart] = match.split('.');
+      const integerWords = integerPart ? convertNumber(parseInt(integerPart, 10)) : 'zero';
+      const decimalWords = decimalPart ? decimalPart.split('').map(d => ones[parseInt(d, 10)]).join(' ') : '';
+      return integerWords + (decimalPart ? ' point ' + decimalWords : '');
+    } else {
+      const num = parseInt(match, 10);
+      return convertNumber(num);
+    }
+  });
 }
 
 export function useAppStore() {
@@ -35,6 +93,124 @@ export function useAppStore() {
   });
   const [isEditingText, setIsEditingText] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // TTS state (global)
+  const [ttsSpeaking, setTtsSpeaking] = useState(false);
+  const [ttsPaused, setTtsPaused] = useState(false);
+  const [ttsVoice, setTtsVoice] = useState<SpeechSynthesisVoice | null>(null);
+  const [ttsCurrentSentence, setTtsCurrentSentence] = useState<string | null>(null);
+  const ttsUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  // Load TTS voices
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
+
+      const femaleVoiceKeywords = [
+        'female', 'woman', 'samantha', 'victoria', 'karen', 'moira', 'tessa', 'fiona',
+        'google us english', 'microsoft zira', 'microsoft heera', 'microsoft aria'
+      ];
+
+      let selectedVoice = englishVoices.find(voice =>
+        femaleVoiceKeywords.some(keyword => voice.name.toLowerCase().includes(keyword))
+      );
+
+      if (!selectedVoice) {
+        selectedVoice = englishVoices.find(voice => voice.lang === 'en-US');
+      }
+
+      if (!selectedVoice && englishVoices.length > 0) {
+        selectedVoice = englishVoices[0];
+      }
+
+      setTtsVoice(selectedVoice || null);
+    };
+
+    // Try to load voices immediately
+    loadVoices();
+
+    // Also try after a short delay (voices may load asynchronously)
+    setTimeout(() => {
+      loadVoices();
+    }, 100);
+
+    // Listen for voice changes
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
+
+  // TTS methods
+  const ttsSpeak = useCallback((text: string) => {
+    if (!text || !text.trim()) return;
+
+    const textWithNumbersConverted = numberToEnglishWords(text);
+    const normalizedText = text.trim();
+
+    // Update state first, then cancel to avoid intermediate null state
+    setTtsSpeaking(true);
+    setTtsPaused(false);
+    setTtsCurrentSentence(normalizedText);
+
+    // Cancel after state update
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(textWithNumbersConverted);
+    utterance.rate = 0.9;
+    utterance.pitch = 1.1;
+    utterance.volume = 1.0;
+    utterance.lang = 'en-US';
+
+    // Try to use selected voice, but don't fail if not available
+    if (ttsVoice) {
+      utterance.voice = ttsVoice;
+    }
+
+    utterance.onend = () => {
+      setTtsSpeaking(false);
+      setTtsPaused(false);
+      setTtsCurrentSentence(null);
+    };
+
+    utterance.onerror = (e) => {
+      // Ignore interrupted errors (normal when canceling speech)
+      if (e.error === 'interrupted' || e.error === 'canceled') {
+        // Don't reset state on interrupted error since we're starting new speech
+        // State will be reset by onend of the new speech
+      } else {
+        setTtsSpeaking(false);
+        setTtsPaused(false);
+        setTtsCurrentSentence(null);
+      }
+    };
+
+    ttsUtteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  }, [ttsVoice]);
+
+  const ttsPause = useCallback(() => {
+    if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+      window.speechSynthesis.pause();
+      setTtsPaused(true);
+    }
+  }, []);
+
+  const ttsResume = useCallback(() => {
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+      setTtsPaused(false);
+    }
+  }, []);
+
+  const ttsCancel = useCallback(() => {
+    window.speechSynthesis.cancel();
+    setTtsSpeaking(false);
+    setTtsPaused(false);
+    setTtsCurrentSentence(null);
+  }, []);
 
   // Persist session state
   const persistSession = useCallback((sessionId: number | null, recordId: number | null) => {
@@ -359,6 +535,9 @@ export function useAppStore() {
     showTranslation,
     isEditingText,
     loading,
+    ttsSpeaking,
+    ttsPaused,
+    ttsCurrentSentence,
 
     // Actions
     loadSessions,
@@ -383,6 +562,10 @@ export function useAppStore() {
     restoreState,
     fetchCurrentRecord,
     setLoading,
+    ttsSpeak,
+    ttsPause,
+    ttsResume,
+    ttsCancel,
   };
 }
 

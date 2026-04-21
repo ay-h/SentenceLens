@@ -1,5 +1,6 @@
 import type { WordLookupState } from '@/hooks/useWordLookup';
-import { Loader2, X } from 'lucide-react';
+import { useApp } from '@/store/AppContext';
+import { Loader2, Volume2, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -10,6 +11,7 @@ interface Props {
 
 export default function WordLookupPopover({ state, onClose }: Props) {
   const popoverRef = useRef<HTMLDivElement>(null);
+  const { ttsSpeak, ttsSpeaking } = useApp();
 
   // Close on Escape key
   useEffect(() => {
@@ -80,7 +82,17 @@ export default function WordLookupPopover({ state, onClose }: Props) {
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50">
-        <span className="font-semibold text-[15px] text-gray-900">{state.word}</span>
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-[15px] text-gray-900">{state.word}</span>
+          <button
+            onClick={() => ttsSpeak(state.word)}
+            disabled={ttsSpeaking}
+            className="p-0.5 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600 disabled:opacity-50"
+            title="朗读单词"
+          >
+            <Volume2 size={14} />
+          </button>
+        </div>
         <button
           onClick={onClose}
           className="p-0.5 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600"
