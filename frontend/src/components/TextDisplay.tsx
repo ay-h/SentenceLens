@@ -21,13 +21,15 @@ export default function TextDisplay() {
 
   // Word lookup
   const { wordLookup, lookupWord, closeWordLookup } = useWordLookup();
+  const sentenceRef = useRef<HTMLSpanElement>(null);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingClickRef = useRef<(() => void) | null>(null);
-  const sentenceRef = useRef<HTMLSpanElement>(null);
+  const isDoubleClickRef = useRef(false);
 
   const handleWordDblClick = useCallback((e: React.MouseEvent<HTMLSpanElement>, word: string) => {
     e.stopPropagation();
-    // Cancel any pending single-click
+    // Mark as double-click to cancel pending single-click
+    isDoubleClickRef.current = true;
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current);
       clickTimerRef.current = null;
@@ -35,7 +37,28 @@ export default function TextDisplay() {
     }
     const rect = (e.target as HTMLElement).getBoundingClientRect();
     lookupWord(word, rect);
+    // Reset double-click flag after a short delay
+    setTimeout(() => {
+      isDoubleClickRef.current = false;
+    }, 100);
   }, [lookupWord]);
+
+  const handleSentenceClickDelayed = useCallback((action: () => void) => {
+    // Cancel any pending click
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current);
+    }
+    // Store the action to execute after delay
+    pendingClickRef.current = action;
+    // Set a delay to wait for potential double-click
+    clickTimerRef.current = setTimeout(() => {
+      if (pendingClickRef.current && !isDoubleClickRef.current) {
+        pendingClickRef.current();
+        pendingClickRef.current = null;
+        clickTimerRef.current = null;
+      }
+    }, 200); // 200ms delay to distinguish single vs double click
+  }, []);
 
   if (!currentRecord || sentences.length === 0) return null;
 
@@ -107,6 +130,8 @@ export default function TextDisplay() {
                     toast.info('正在分析句子...');
                     await handleAnalyze();
                     toast.success('分析完成');
+                    // After analysis completes, the analysis should be automatically shown
+                    // The handleAnalyze in useAppStore already updates selectedAnalysis
                   } catch (err: unknown) {
                     toast.error(`分析失败: ${err instanceof Error ? err.message : '未知错误'}`);
                   } finally {
@@ -174,8 +199,7 @@ export default function TextDisplay() {
                         ref={isSelected ? sentenceRef : null}
                         onClick={(e) => {
                           e.stopPropagation();
-                          // Immediate selection without delay
-                          handleSentenceClick();
+                          handleSentenceClickDelayed(() => handleSentenceClick());
                         }}
                         className={`inline cursor-pointer rounded px-1 py-0.5 text-[19px] leading-9 text-gray-900 transition-all ${
                         isSelected

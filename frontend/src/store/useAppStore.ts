@@ -193,6 +193,10 @@ export function useAppStore() {
         const updatedRecord = await api.getRecord(currentRecordId);
         const analysis = updatedRecord.analyses?.find(a => a.sentence_id === sentence_id);
         setSelectedAnalysis(analysis || null);
+        // Set analysisVisible to true to automatically show the analysis result
+        if (analysis) {
+          setAnalysisVisible(true);
+        }
       }
     } catch (error) {
       console.error('Analysis failed:', error);
