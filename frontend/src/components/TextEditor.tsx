@@ -2,7 +2,7 @@ import { deleteSentence, editSentence, insertSentence, splitSentence } from '@/a
 import { getRecordSentences } from '@/api';
 import { ConfirmDialog, Dialog } from '@/components/Dialog';
 import { useApp } from '@/store/AppContext';
-import { ArrowDown, ArrowUp, Check, Edit, Loader2, Plus, Save, Scissors, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Check, ChevronDown, ChevronRight, Edit, Loader2, Plus, Save, Scissors, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -37,6 +37,19 @@ export default function TextEditor({ onClose }: TextEditorProps) {
   const [splitTargetId, setSplitTargetId] = useState<string | null>(null);
   const [splitPosition, setSplitPosition] = useState(0);
   const [splitNewParagraph, setSplitNewParagraph] = useState(false);
+  const [collapsedParagraphs, setCollapsedParagraphs] = useState<Set<number>>(new Set());
+
+  function toggleParagraphCollapse(paragraphIndex: number) {
+    setCollapsedParagraphs(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(paragraphIndex)) {
+        newSet.delete(paragraphIndex);
+      } else {
+        newSet.add(paragraphIndex);
+      }
+      return newSet;
+    });
+  }
 
   // Load sentences when record changes
   useEffect(() => {
@@ -278,63 +291,77 @@ export default function TextEditor({ onClose }: TextEditorProps) {
             {sortedParagraphs.map((paragraph) => (
               <div key={paragraph.index} className="relative">
                 <div className="flex items-center gap-2 mb-2">
+                  <button
+                    onClick={() => toggleParagraphCollapse(paragraph.index)}
+                    className="p-1 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)]"
+                    title={collapsedParagraphs.has(paragraph.index) ? '展开段落' : '折叠段落'}
+                  >
+                    {collapsedParagraphs.has(paragraph.index) ? (
+                      <ChevronRight size={14} />
+                    ) : (
+                      <ChevronDown size={14} />
+                    )}
+                  </button>
                   <span className="text-xs text-[var(--color-text-muted)] font-medium">
                     段落 {paragraph.index + 1}
                   </span>
-                  <button
-                    onClick={() => {
-                      const firstSentence = paragraph.sentences[0];
-                      if (firstSentence) {
-                        openInsertDialog(firstSentence.id, 'before');
-                        setInsertNewParagraph(true);
-                      }
-                    }}
-                    className="p-1 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)]"
-                    title="在段落前插入新段落"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
-                <div className="space-y-2 pl-4 border-l-2 border-[var(--color-border)]">
-                  {paragraph.sentences.map((sentence) => (
-                    <div
-                      key={sentence.id}
-                      className="group relative bg-[var(--color-surface)] rounded-lg p-3 hover:bg-[var(--color-surface-hover)] transition-colors"
+                  {paragraph.index === 0 && (
+                    <button
+                      onClick={() => {
+                        const firstSentence = paragraph.sentences[0];
+                        if (firstSentence) {
+                          openInsertDialog(firstSentence.id, 'before');
+                          setInsertNewParagraph(true);
+                        }
+                      }}
+                      className="p-1 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)]"
+                      title="在段落前插入新段落"
                     >
-                      {editingSentenceId === sentence.id ? (
-                        <div className="space-y-2">
-                          <textarea
-                            value={editingText}
-                            onChange={(e) => setEditingText(e.target.value)}
-                            className="w-full p-2 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] resize-none"
-                            rows={2}
-                            autoFocus
-                          />
-                          <div className="flex items-center gap-2 justify-end">
-                            <button
-                              onClick={() => {
-                                setEditingSentenceId(null);
-                                setEditingText('');
-                              }}
-                              className="px-3 py-1.5 rounded text-sm text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)]"
-                            >
-                              取消
-                            </button>
-                            <button
-                              onClick={() => handleEditSentence(sentence.id, editingText)}
-                              disabled={isSaving}
-                              className="px-3 py-1.5 rounded text-sm bg-[var(--color-primary)] text-[var(--color-primary-foreground)] disabled:opacity-50 flex items-center gap-1"
-                            >
-                              {isSaving ? (
-                                <Loader2 size={14} className="animate-spin" />
-                              ) : (
-                                <Save size={14} />
-                              )}
-                              保存
-                            </button>
+                      <ArrowUpToLine size={14} />
+                    </button>
+                  )}
+                </div>
+                {!collapsedParagraphs.has(paragraph.index) && (
+                  <div className="space-y-0.5 pl-4 border-l-2 border-[var(--color-border)]">
+                    {paragraph.sentences.map((sentence) => (
+                      <div
+                        key={sentence.id}
+                        className="group relative bg-[var(--color-surface)] rounded-lg p-2 hover:bg-[var(--color-surface-hover)] transition-colors"
+                      >
+                        {editingSentenceId === sentence.id ? (
+                          <div className="space-y-2">
+                            <textarea
+                              value={editingText}
+                              onChange={(e) => setEditingText(e.target.value)}
+                              className="w-full p-2 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] resize-none"
+                              rows={2}
+                              autoFocus
+                            />
+                            <div className="flex items-center gap-2 justify-end">
+                              <button
+                                onClick={() => {
+                                  setEditingSentenceId(null);
+                                  setEditingText('');
+                                }}
+                                className="px-3 py-1.5 rounded text-sm text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)]"
+                              >
+                                取消
+                              </button>
+                              <button
+                                onClick={() => handleEditSentence(sentence.id, editingText)}
+                                disabled={isSaving}
+                                className="px-3 py-1.5 rounded text-sm bg-[var(--color-primary)] text-[var(--color-primary-foreground)] disabled:opacity-50 flex items-center gap-1"
+                              >
+                                {isSaving ? (
+                                  <Loader2 size={14} className="animate-spin" />
+                                ) : (
+                                  <Save size={14} />
+                                )}
+                                保存
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
+                        ) : (
                         <>
                           <div className="flex items-start gap-2">
                             <span className="text-xs text-[var(--color-text-muted)] mt-1">
@@ -389,6 +416,7 @@ export default function TextEditor({ onClose }: TextEditorProps) {
                     </div>
                   ))}
                 </div>
+                )}
                 <button
                   onClick={() => {
                     const lastSentence = paragraph.sentences[paragraph.sentences.length - 1];
@@ -399,7 +427,7 @@ export default function TextEditor({ onClose }: TextEditorProps) {
                   }}
                   className="mt-2 ml-4 px-3 py-1.5 rounded text-sm text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] flex items-center gap-1"
                 >
-                  <Plus size={14} />
+                  <ArrowDownToLine size={14} />
                   在段落后插入新段落
                 </button>
               </div>
