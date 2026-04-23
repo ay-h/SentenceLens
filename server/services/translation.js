@@ -197,8 +197,6 @@ class TranslationService {
             paragraph_index: sentence.paragraph_index || 0,
             translation_time_ms: result.translation_time_ms || 100
           });
-        } else {
-          console.log(`句子翻译失败: ${sentence.text}`);
         }
       }
 
@@ -297,8 +295,6 @@ class TranslationService {
             paragraph_index: sentence.paragraph_index || 0,
             translation_time_ms: result.translation_time_ms || 100
           });
-        } else {
-          console.log(`句子翻译失败: ${sentence.text}`);
         }
       }
 

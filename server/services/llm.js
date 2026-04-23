@@ -415,7 +415,6 @@ async function translateSentencesBatch(sentences, recordId, baseUrl, apiKey, mod
     const existing = db.getTranslationBySentence(recordId, sentenceText);
 
     if (existing) {
-      console.log(`Using cached translation for sentence ${i + 1}: ${sentenceText.substring(0, 30)}...`);
       results.push({
         original_sentence: sentenceText,
         translated_sentence: existing.translated_sentence,
@@ -423,7 +422,6 @@ async function translateSentencesBatch(sentences, recordId, baseUrl, apiKey, mod
         from_cache: true,
       });
     } else {
-      console.log(`Need to translate sentence ${i + 1}: ${sentenceText.substring(0, 30)}...`);
       sentencesToTranslate.push(sentenceText);
       indicesToTranslate.push(i);
       sentenceObjects.push(sentenceObj);
@@ -459,7 +457,6 @@ async function translateSentencesBatch(sentences, recordId, baseUrl, apiKey, mod
           from_cache: false,
         });
       } else {
-        console.log(`Translation failed for sentence: ${sentenceText.substring(0, 30)}...`);
         results.push({
           original_sentence: sentenceText,
           translated_sentence: `[翻译失败: ${translation.error || '未知错误'}]`,
@@ -496,7 +493,7 @@ async function translateSentencesBatch(sentences, recordId, baseUrl, apiKey, mod
  */
 async function translateSentencesBatchStream(sentences, recordId, baseUrl, apiKey, model, db, progressCallback = null) {
   const totalStartTime = Date.now();
-  console.log(`Translating ${sentences.length} sentences for record_id: ${recordId} (streaming mode)`);
+  console.log(`Translating ${sentences.length} sentences for record_id: ${recordId}`);
 
   const results = [];
   const sentencesToTranslate = [];
@@ -512,7 +509,6 @@ async function translateSentencesBatchStream(sentences, recordId, baseUrl, apiKe
     const existing = db.getTranslationBySentence(recordId, sentenceText);
 
     if (existing) {
-      console.log(`Using cached translation for sentence ${i + 1}: ${sentenceText.substring(0, 30)}...`);
       results.push({
         original_sentence: sentenceText,
         translated_sentence: existing.translated_sentence,
@@ -520,7 +516,6 @@ async function translateSentencesBatchStream(sentences, recordId, baseUrl, apiKe
         from_cache: true,
       });
     } else {
-      console.log(`Need to translate sentence ${i + 1}: ${sentenceText.substring(0, 30)}...`);
       sentencesToTranslate.push(sentenceText);
       indicesToTranslate.push(i);
       sentenceObjects.push(sentenceObj);
@@ -529,7 +524,7 @@ async function translateSentencesBatchStream(sentences, recordId, baseUrl, apiKe
 
   // Batch translate new sentences with streaming
   if (sentencesToTranslate.length > 0) {
-    console.log(`Translating ${sentencesToTranslate.length} new sentences (streaming)...`);
+    console.log(`Translating ${sentencesToTranslate.length} new sentences...`);
 
     // Convert to new format: {uuid, text}
     const sentenceObjectsForBatch = sentenceObjects.map((obj, idx) => ({
@@ -595,7 +590,6 @@ async function translateSentencesBatchStream(sentences, recordId, baseUrl, apiKe
           from_cache: false,
         });
       } else {
-        console.log(`Translation failed for sentence: ${sentenceText.substring(0, 30)}...`);
         results.push({
           original_sentence: sentenceText,
           translated_sentence: `[翻译失败: ${translation.error || '未知错误'}]`,

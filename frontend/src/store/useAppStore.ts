@@ -442,10 +442,8 @@ export function useAppStore() {
           currentRecordId,
           forceAll,
           (event) => {
-            console.log('SSE progress event received:', event);
             // Progress callback - update translations as they arrive
             if (event.translations && event.translations.length > 0) {
-              console.log('Updating translations with', event.translations.length, 'items');
               setTranslations(prev => {
                 const newTranslations = [...prev];
                 event.translations!.forEach(t => {
@@ -466,7 +464,6 @@ export function useAppStore() {
                     newTranslations.push(translation);
                   }
                 });
-                console.log('Updated translations count:', newTranslations.length);
                 return newTranslations;
               });
               setShowTranslation(true);
@@ -474,13 +471,10 @@ export function useAppStore() {
             }
           },
           (event) => {
-            // Complete callback
-            console.log('SSE complete event received:', event);
-            console.log('Translation completed:', event.data);
+            // Complete callback - nothing to do
           },
           (event) => {
             // Error callback
-            console.error('SSE error event received:', event);
             throw new Error(event.error || 'Translation failed');
           }
         );
