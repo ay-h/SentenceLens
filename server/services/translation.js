@@ -152,10 +152,25 @@ class TranslationService {
    * @returns {Object} - Translation result
    */
   async translateAndUpdateSentences(sentencesToTranslate, recordId, config, skippedCount) {
+    const totalStartTime = Date.now();
     try {
+      let progressInfo = {
+        total_batches: 0,
+        completed_batches: 0,
+        current_batch: 0
+      };
+
+      // Progress callback to track translation progress
+      const progressCallback = (completed, total) => {
+        progressInfo.completed_batches = completed;
+        progressInfo.total_batches = total;
+        progressInfo.current_batch = completed;
+        console.log(`Translation progress: ${completed}/${total} batches (${Math.round(completed/total*100)}%)`);
+      };
+
       // Pass sentence objects (with UUIDs) instead of just text
       const translationResults = await this.llmService.translateSentencesBatch(
-        sentencesToTranslate, recordId, config.url, config.api_key, config.model, this.db
+        sentencesToTranslate, recordId, config.url, config.api_key, config.model, this.db, progressCallback
       );
 
       // Update database with new translations
@@ -164,7 +179,7 @@ class TranslationService {
         const sentence = sentencesToTranslate[i];
         const result = translationResults[i];
 
-        if (result && !result.error) {
+        if (result && result.translated_sentence && result.translated_sentence.trim() !== '') {
           // Create translation record with sentence_id (UUID) if available
           const translation = this.db.createTranslation(
             recordId,
@@ -192,15 +207,120 @@ class TranslationService {
         console.log(`⚠️  ${failedCount} 个句子翻译失败`);
       }
 
+      const totalElapsed = ((Date.now() - totalStartTime) / 1000).toFixed(2);
+      console.log(`✓ Total translation time: ${totalElapsed}s (${sentencesToTranslate.length} sentences, ${(totalElapsed/sentencesToTranslate.length).toFixed(2)}s/sentence average)`);
+
       return {
         success: true,
         data: {
           translated_count: successfulTranslations.length,
           skipped_count: skippedCount,
           no_changes_detected: false,
-          translations: successfulTranslations
+          translations: successfulTranslations,
+          progress: progressInfo,
+          total_time_seconds: parseFloat(totalElapsed)
         },
-        message: `已翻译${successfulTranslations.length}个句子，跳过${skippedCount}个未修改的句子`
+        message: `已翻译${successfulTranslations.length}个句子，跳过${skippedCount}个未修改的句子，耗时${totalElapsed}秒`
+      };
+
+    } catch (error) {
+      console.error('翻译过程中发生错误:', error);
+      return {
+        success: false,
+        error: error.message || '翻译过程中发生错误'
+      };
+    }
+  }
+
+  /**
+   * Translate sentences and update database with SSE streaming
+   * @param {Array} sentencesToTranslate - Sentences to translate
+   * @param {number} recordId - Record ID
+   * @param {Object} config - LLM configuration
+   * @param {number} skippedCount - Number of skipped sentences
+   * @param {Function} streamCallback - Callback to send batch results via SSE
+   * @returns {Object} - Translation result
+   */
+  async translateAndUpdateSentencesStream(sentencesToTranslate, recordId, config, skippedCount, streamCallback) {
+    const totalStartTime = Date.now();
+    try {
+      let progressInfo = {
+        total_batches: 0,
+        completed_batches: 0,
+        current_batch: 0
+      };
+
+      // Progress callback to track translation progress and stream results
+      const progressCallback = (completed, total, batchTranslations) => {
+        progressInfo.completed_batches = completed;
+        progressInfo.total_batches = total;
+        progressInfo.current_batch = completed;
+        console.log(`Translation progress: ${completed}/${total} batches (${Math.round(completed/total*100)}%)`);
+
+        // Stream batch results via SSE callback
+        if (streamCallback && batchTranslations && batchTranslations.length > 0) {
+          streamCallback({
+            batch_index: completed,
+            total_batches: total,
+            progress: Math.round(completed/total*100),
+            translations: batchTranslations
+          });
+        }
+      };
+
+      // Pass sentence objects (with UUIDs) instead of just text
+      const translationResults = await this.llmService.translateSentencesBatchStream(
+        sentencesToTranslate, recordId, config.url, config.api_key, config.model, this.db, progressCallback
+      );
+
+      // Update database with new translations
+      let successfulTranslations = [];
+      for (let i = 0; i < sentencesToTranslate.length; i++) {
+        const sentence = sentencesToTranslate[i];
+        const result = translationResults[i];
+
+        if (result && result.translated_sentence && result.translated_sentence.trim() !== '') {
+          // Create translation record with sentence_id (UUID) if available
+          const translation = this.db.createTranslation(
+            recordId,
+            sentence.text,
+            result.translated_sentence,
+            sentence.index || 0, // Use display index
+            sentence.paragraph_index || 0, // Add paragraph index
+            sentence.id || null // Use UUID if available, otherwise null
+          );
+
+          successfulTranslations.push({
+            sentence_id: sentence.id,
+            sentence_text: sentence.text,
+            translation: result.translated_sentence,
+            paragraph_index: sentence.paragraph_index || 0,
+            translation_time_ms: result.translation_time_ms || 100
+          });
+        } else {
+          console.log(`句子翻译失败: ${sentence.text}`);
+        }
+      }
+
+      const failedCount = sentencesToTranslate.length - successfulTranslations.length;
+      if (failedCount > 0) {
+        console.log(`⚠️  ${failedCount} 个句子翻译失败`);
+      }
+
+      const totalElapsed = ((Date.now() - totalStartTime) / 1000).toFixed(2);
+      console.log(`✓ Total translation time: ${totalElapsed}s (${sentencesToTranslate.length} sentences, ${(totalElapsed/sentencesToTranslate.length).toFixed(2)}s/sentence average)`);
+
+      return {
+        success: true,
+        data: {
+          translated_count: successfulTranslations.length,
+          skipped_count: skippedCount,
+          no_changes_detected: false,
+          translations: successfulTranslations,
+          progress: progressInfo,
+          total_time_seconds: parseFloat(totalElapsed)
+        },
+        message: `已翻译${successfulTranslations.length}个句子，跳过${skippedCount}个未修改的句子，耗时${totalElapsed}秒`
       };
 
     } catch (error) {
@@ -242,7 +362,7 @@ class TranslationService {
       const existingTranslations = this.getExistingTranslations(recordId);
 
       // Detect which sentences need translation
-      const { sentencesToTranslate, skippedCount, hasChanges } = 
+      const { sentencesToTranslate, skippedCount, hasChanges } =
         this.detectSentencesToTranslate(sentences, existingTranslations, forceAll);
 
       // Check if no changes detected
@@ -262,6 +382,68 @@ class TranslationService {
       // Translate and update sentences
       return await this.translateAndUpdateSentences(
         sentencesToTranslate, recordId, config, skippedCount
+      );
+
+    } catch (error) {
+      console.error('统一翻译错误:', error);
+      return {
+        success: false,
+        error: error.message || '翻译过程中发生错误'
+      };
+    }
+  }
+
+  /**
+   * Perform unified translation with SSE streaming callback
+   * @param {number} recordId - Record ID
+   * @param {boolean} forceAll - Whether to force translate all untranslated sentences
+   * @param {Function} streamCallback - Callback to send batch results via SSE
+   * @returns {Object} - Translation result
+   */
+  async performUnifiedTranslationStream(recordId, forceAll = false, streamCallback = null) {
+    try {
+      // Get record
+      const record = this.db.getRecord(recordId);
+      if (!record) {
+        return {
+          success: false,
+          error: '记录不存在'
+        };
+      }
+
+      // Get sentences from record text
+      const sentences = this.getSentencesFromRecord(record);
+      if (!sentences || sentences.length === 0) {
+        return {
+          success: false,
+          error: '没有找到可翻译的句子'
+        };
+      }
+
+      // Get existing translations
+      const existingTranslations = this.getExistingTranslations(recordId);
+
+      // Detect which sentences need translation
+      const { sentencesToTranslate, skippedCount, hasChanges } =
+        this.detectSentencesToTranslate(sentences, existingTranslations, forceAll);
+
+      // Check if no changes detected
+      if (!hasChanges && !forceAll) {
+        return this.generateNoChangesResponse(sentences);
+      }
+
+      // Get LLM config
+      const config = this.db.getLatestLLMConfig();
+      if (!config) {
+        return {
+          success: false,
+          error: '未配置LLM，请先在设置页面配置LLM'
+        };
+      }
+
+      // Translate and update sentences with streaming callback
+      return await this.translateAndUpdateSentencesStream(
+        sentencesToTranslate, recordId, config, skippedCount, streamCallback
       );
 
     } catch (error) {

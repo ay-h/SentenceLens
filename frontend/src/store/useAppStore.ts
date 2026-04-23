@@ -430,25 +430,88 @@ export function useAppStore() {
   }, [currentRecordId, currentSessionId, currentRecord]);
 
   // Unified translation - automatically detects changes and translates only needed sentences
-  const handleUnifiedTranslate = useCallback(async (forceAll = false) => {
+  const handleUnifiedTranslate = useCallback(async (forceAll = false, useStream = true) => {
     if (!currentRecordId) return;
     setLoading(true);
-    try {
-      const result = await api.unifiedTranslate(currentRecordId, forceAll);
-      
-      if (result.success) {
-        // Refresh translations from server
-        const transData = await api.getRecordTranslations(currentRecordId);
-        setTranslations(transData.translations);
-        setShowTranslation(true);
-        saveToStorage('showTranslation', 'true');
-        
-        return result.data;
-      } else {
-        throw new Error(result.error);
+
+    if (useStream) {
+      // Use SSE streaming for real-time updates
+      let eventSource: EventSource | null = null;
+      try {
+        eventSource = api.unifiedTranslateStream(
+          currentRecordId,
+          forceAll,
+          (event) => {
+            console.log('SSE progress event received:', event);
+            // Progress callback - update translations as they arrive
+            if (event.translations && event.translations.length > 0) {
+              console.log('Updating translations with', event.translations.length, 'items');
+              setTranslations(prev => {
+                const newTranslations = [...prev];
+                event.translations!.forEach(t => {
+                  // Convert SSE format to Translation format
+                  const translation: Translation = {
+                    sentence_index: t.sentence_id as number,
+                    original_sentence: t.sentence_text,
+                    translated_sentence: t.translation,
+                    sentence_id: t.sentence_id?.toString()
+                  };
+
+                  const existingIndex = newTranslations.findIndex(
+                    nt => nt.sentence_id === translation.sentence_id
+                  );
+                  if (existingIndex >= 0) {
+                    newTranslations[existingIndex] = translation;
+                  } else {
+                    newTranslations.push(translation);
+                  }
+                });
+                console.log('Updated translations count:', newTranslations.length);
+                return newTranslations;
+              });
+              setShowTranslation(true);
+              saveToStorage('showTranslation', 'true');
+            }
+          },
+          (event) => {
+            // Complete callback
+            console.log('SSE complete event received:', event);
+            console.log('Translation completed:', event.data);
+          },
+          (event) => {
+            // Error callback
+            console.error('SSE error event received:', event);
+            throw new Error(event.error || 'Translation failed');
+          }
+        );
+      } catch (error) {
+        console.error('Translation failed:', error);
+        throw error;
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
+
+      // Return eventSource so caller can close if needed
+      return eventSource;
+    } else {
+      // Use regular API call (non-streaming)
+      try {
+        const result = await api.unifiedTranslate(currentRecordId, forceAll);
+
+        if (result.success) {
+          // Refresh translations from server
+          const transData = await api.getRecordTranslations(currentRecordId);
+          setTranslations(transData.translations);
+          setShowTranslation(true);
+          saveToStorage('showTranslation', 'true');
+
+          return result.data;
+        } else {
+          throw new Error(result.error);
+        }
+      } finally {
+        setLoading(false);
+      }
     }
   }, [currentRecordId]);
 

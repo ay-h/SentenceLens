@@ -170,6 +170,58 @@ export async function unifiedTranslate(
   });
 }
 
+export interface SSETranslationEvent {
+  type: 'start' | 'progress' | 'complete' | 'error';
+  recordId?: number;
+  batch_index?: number;
+  total_batches?: number;
+  progress?: number;
+  translations?: Array<{
+    sentence_id: number;
+    sentence_text: string;
+    translation: string;
+    translation_time_ms: number;
+  }>;
+  error?: string;
+  data?: any;
+  message?: string;
+}
+
+export function unifiedTranslateStream(
+  recordId: number,
+  forceAll = false,
+  onProgress?: (event: SSETranslationEvent) => void,
+  onComplete?: (event: SSETranslationEvent) => void,
+  onError?: (event: SSETranslationEvent) => void,
+): EventSource {
+  const url = `${BASE}/api/records/${recordId}/translate/stream?force_all=${forceAll}`;
+  const eventSource = new EventSource(url);
+
+  eventSource.addEventListener('start', (e) => {
+    const data = JSON.parse(e.data) as SSETranslationEvent;
+    onProgress?.(data);
+  });
+
+  eventSource.addEventListener('progress', (e) => {
+    const data = JSON.parse(e.data) as SSETranslationEvent;
+    onProgress?.(data);
+  });
+
+  eventSource.addEventListener('complete', (e) => {
+    const data = JSON.parse(e.data) as SSETranslationEvent;
+    onComplete?.(data);
+    eventSource.close();
+  });
+
+  eventSource.addEventListener('error', (e) => {
+    const data: SSETranslationEvent = { type: 'error', error: 'Connection error' };
+    onError?.(data);
+    eventSource.close();
+  });
+
+  return eventSource;
+}
+
 export async function translateText(
   text: string,
   recordId: number,

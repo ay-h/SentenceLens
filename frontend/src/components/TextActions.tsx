@@ -42,7 +42,15 @@ export default function TextActions() {
     try {
       toast.info('正在检测文本变化并翻译...');
       const result = await handleUnifiedTranslate();
-      
+
+      // Stream mode returns EventSource, non-stream returns data object
+      if (result instanceof EventSource) {
+        // Streaming mode - translations will update automatically via callbacks
+        toast.success('翻译开始，结果将实时显示');
+        return;
+      }
+
+      // Non-stream mode - handle result object
       if (result) {
         if (result.no_changes_detected) {
           toast.info('文本无变化，无需重新翻译');
@@ -51,7 +59,7 @@ export default function TextActions() {
         } else {
           toast.info('没有需要翻译的句子');
         }
-        
+
         // Handle skipped sentences notification
         if (result.skipped_count > 0 && result.translated_count > 0) {
           toast.info(`跳过了 ${result.skipped_count} 个未修改的句子`);
@@ -59,7 +67,7 @@ export default function TextActions() {
       }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : '未知错误';
-      
+
       // Handle specific error cases
       if (errorMessage.includes('有未保存的更改')) {
         toast.error('请先保存文本更改后再翻译');

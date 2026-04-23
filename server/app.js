@@ -691,6 +691,55 @@ app.post('/api/records/:id/translate', async (req, res) => {
   }
 });
 
+/**
+ * Unified translation with SSE streaming - real-time translation results
+ */
+app.get('/api/records/:id/translate/stream', async (req, res) => {
+  try {
+    const recordId = parseInt(req.params.id);
+    const { force_all = false } = req.query;
+
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+
+    // Send initial event
+    res.write(`event: start\n`);
+    res.write(`data: ${JSON.stringify({ type: 'start', recordId })}\n\n`);
+
+    // Callback to send translation results as they complete
+    const streamCallback = (batchResult) => {
+      try {
+        res.write(`event: progress\n`);
+        res.write(`data: ${JSON.stringify({ type: 'progress', ...batchResult })}\n\n`);
+      } catch (error) {
+        console.error('SSE write error:', error);
+      }
+    };
+
+    // Perform translation with streaming callback
+    const result = await translationService.performUnifiedTranslationStream(recordId, force_all, streamCallback);
+
+    // Send final event
+    res.write(`event: complete\n`);
+    res.write(`data: ${JSON.stringify({ type: 'complete', ...result })}\n\n`);
+
+    res.end();
+
+  } catch (error) {
+    console.error('SSE翻译错误:', error);
+    try {
+      res.write(`event: error\n`);
+      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+      res.end();
+    } catch (e) {
+      console.error('SSE error write failed:', e);
+    }
+  }
+});
+
 // ==================== Analysis Routes ====================
 app.get('/api/records/:id/quality', (req, res) => {
   try {
