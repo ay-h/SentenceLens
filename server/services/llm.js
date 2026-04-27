@@ -620,11 +620,11 @@ async function lookupWord(word, baseUrl, apiKey, model) {
   try {
     const systemPrompt = '你是一个专业的英汉词典助手。请为给定的英语单词提供准确的中文释义，按词性分类。返回 JSON 格式。';
 
-    const userPrompt = `请为英语单词 "${word}" 提供中文释义。
+    const userPrompt = `请为英语单词提供中文释义。
 
 请严格按照以下 JSON 格式返回：
 {
-  "word": "${word}",
+  "word": "单词",
   "phonetic": "音标（如 /wɜːrd/）",
   "partsOfSpeech": [
     {
@@ -638,7 +638,9 @@ async function lookupWord(word, baseUrl, apiKey, model) {
 1. 音标使用国际音标
 2. 列出该单词所有常见词性及对应中文释义
 3. 释义简洁准确
-4. 只返回 JSON，不要多余文字`;
+4. 只返回 JSON，不要多余文字
+
+待查单词: ${word}`;
 
     console.log(`LLM 查词: ${word}`);
     const content = await callLLMAPI(baseUrl, apiKey, model, [
